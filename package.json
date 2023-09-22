@@ -1,0 +1,27 @@
+{
+  "name": "bigdataindexingproject",
+  "version": "1.0.0",
+  "description": "Advanced Big Data Indexing Project",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/paurush11/Adv-Big-Data-Indexing.git"
+  },
+  "keywords": [
+    "node",
+    "npm",
+    "express",
+    "graphql",
+    "restapi",
+    "jwt"
+  ],
+  "author": "Paurush Batish",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/paurush11/Adv-Big-Data-Indexing/issues"
+  },
+  "homepage": "https://github.com/paurush11/Adv-Big-Data-Indexing#readme"
+}
