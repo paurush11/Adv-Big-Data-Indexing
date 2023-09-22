@@ -4,7 +4,16 @@
   "description": "Advanced Big Data Indexing Project",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "watch": "tsc -w",
+    "start": "ts-node src/index.ts",
+    "start2": "node dist/index.js",
+    "prettier": "prettier --write 'src/**/*.{js,ts,tsx,jsx}'",
+    "dev": "prettier --check 'src/**/*.{js,ts,tsx,jsx}' && nodemon dist/index.js",
+    "create:migration2": "typeorm migration:create src/migrations/migrations",
+    "codegen": "graphql-codegen --config codegen.ts",
+    "run:migration": "yarn typeorm migration:run",
+    "typeorm": "npx typeorm-ts-node-commonjs --dataSource src/dataSource.ts"
   },
   "repository": {
     "type": "git",
@@ -23,5 +32,37 @@
   "bugs": {
     "url": "https://github.com/paurush11/Adv-Big-Data-Indexing/issues"
   },
-  "homepage": "https://github.com/paurush11/Adv-Big-Data-Indexing#readme"
+  "homepage": "https://github.com/paurush11/Adv-Big-Data-Indexing#readme",
+  "dependencies": {
+    "@types/connect-redis": "^0.0.20",
+    "@types/redis": "^4.0.11",
+    "apollo-server-express": "^3.12.0",
+    "argon2": "^0.30.3",
+    "connect-redis": "^7.1.0",
+    "cors": "^2.8.5",
+    "dataloader": "^2.2.2",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "graphql": "15.7.2",
+    "nodemailer": "^6.9.3",
+    "nodemon": "^3.0.1",
+    "pg": "^8.11.1",
+    "reflect-metadata": "^0.1.13",
+    "type-graphql": "^1.1.1",
+    "typeorm": "^0.3.17",
+    "typescript": "^5.1.6",
+    "urql": "^4.0.4"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "4.0.1",
+    "@graphql-codegen/client-preset": "4.0.1",
+    "@graphql-codegen/introspection": "4.0.0",
+    "@graphql-codegen/typescript-urql": "^3.7.3",
+    "@parcel/watcher": "^2.2.0",
+    "@types/express": "^4.17.17",
+    "@types/express-session": "^1.17.7",
+    "@types/node": "^20.4.5",
+    "@types/nodemailer": "^6.4.8",
+    "ts-node": "^10.9.1"
+  }
 }
