@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import Redis from "ioredis";
 import * as crypto from "crypto";
+import { isValidDate } from "./utils/dateValidator";
 
 const { Validator } = require("jsonschema");
 
@@ -54,13 +55,22 @@ const main = async () => {
     if (!schema)
       return res.status(404).send("No Schema Found! Add a Schema first");
     const planBody = req.body;
-    const objectID = planBody.objectId;
+    const objectID: string = planBody.objectId !== undefined ? planBody.objectId : null ;
+   
+    if(!objectID)
+    return res
+        .status(400)
+        .send("Invalid Object! Does not match the Schema provided");
     /// Now check if the Object Exists already
     const obj = await redisClient.exists(objectID);
-    if (obj)
+    
+    if (obj){
+      const objectInPlan =  await redisClient.hgetall(objectID);
       return res
-        .status(409)
-        .send("Object Already Exists!!!" + JSON.stringify(obj));
+      .status(409)
+      .send("Object Already Exists!!!" + JSON.stringify(objectInPlan));
+    }
+      
     /// Validate object
     const validator = new Validator();
     const result = validator.validate(planBody, JSON.parse(schema as string));
@@ -68,6 +78,15 @@ const main = async () => {
       return res
         .status(400)
         .send("Invalid Object! Does not match the Schema provided");
+
+    ///check if the dates are valid or not 
+    const creationDateValid = isValidDate(planBody.creationDate)
+    if(!creationDateValid){
+      return res
+      .status(400)
+      .send("Invalid Date Object! Date not match the Schema provided. Make sure its DD-MM-YYYY format");
+
+    }
 
     const eTag = generateEtag(JSON.stringify(planBody));
     await redisClient.hset(
@@ -83,6 +102,7 @@ const main = async () => {
     res.status(201).send("Object Successfully Saved");
   });
   app.get("/plan/:id", async (req, res) => {
+    
     const key = req.params.id;
     const obj = await redisClient.hgetall(key);
 
@@ -93,12 +113,14 @@ const main = async () => {
     if (clientEtag && clientEtag === obj.Etag) {
       return res.status(304).send();
     }
+  
 
-    res.status(200).send("Obj" + obj.content);
+    res.status(200).send("Obj" + JSON.stringify(obj));
   });
   app.delete("/plan/:id", async (req, res) => {
     const key = req.params.id;
     const obj = await redisClient.hgetall(key);
+
     if (!obj || !obj.content) {
       return res.status(404).send("No such Object Exists");
     }
@@ -126,10 +148,3 @@ main().catch((e) => {
   console.log("Error -", e);
 });
 
-// post get and delete
-// create a json schema
-// validate it on post
-// paylooad of post has to pass validation
-/// store data in key value store
-/// show that you can get and delete the data
-// conditionasl read

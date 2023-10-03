@@ -112,7 +112,8 @@ const schemaWithDefinitions = {
     objectId: { type: "string" },
     objectType: { type: "string" },
     planType: { type: "string" },
-    creationDate: { type: "string" },
+    creationDate: { type: "string", 
+    pattern : "^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[012])-(\\d{4})$" },
   },
   additionalProperties: false,
   definitions: {
@@ -125,6 +126,7 @@ const schemaWithDefinitions = {
         objectId: { type: "string" },
         objectType: { type: "string" },
       },
+      required : ["objectId"],
     },
     linkedPlanService: {
       type: "object",
@@ -135,6 +137,7 @@ const schemaWithDefinitions = {
         objectId: { type: "string" },
         objectType: { type: "string" },
       },
+      required : ["objectId"],
     },
     service: {
       type: "object",
@@ -144,8 +147,10 @@ const schemaWithDefinitions = {
         objectType: { type: "string" },
         name: { type: "string" },
       },
+      required : ["objectId"],
     },
   },
+  required : ["objectId", "creationDate"],
 };
 
 export default { jsonSchema, schemaWithDefinitions };

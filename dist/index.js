@@ -30,6 +30,7 @@ require("dotenv/config");
 const express_1 = __importDefault(require("express"));
 const ioredis_1 = __importDefault(require("ioredis"));
 const crypto = __importStar(require("crypto"));
+const dateValidator_1 = require("./utils/dateValidator");
 const { Validator } = require("jsonschema");
 const generateEtag = (content) => {
     return crypto.createHash("md5").update(content).digest("hex");
@@ -79,18 +80,30 @@ const main = async () => {
         if (!schema)
             return res.status(404).send("No Schema Found! Add a Schema first");
         const planBody = req.body;
-        const objectID = planBody.objectId;
+        const objectID = planBody.objectId !== undefined ? planBody.objectId : null;
+        if (!objectID)
+            return res
+                .status(400)
+                .send("Invalid Object! Does not match the Schema provided");
         const obj = await redisClient.exists(objectID);
-        if (obj)
+        if (obj) {
+            const objectInPlan = await redisClient.hgetall(objectID);
             return res
                 .status(409)
-                .send("Object Already Exists!!!" + JSON.stringify(obj));
+                .send("Object Already Exists!!!" + JSON.stringify(objectInPlan));
+        }
         const validator = new Validator();
         const result = validator.validate(planBody, JSON.parse(schema));
         if (!result.valid)
             return res
                 .status(400)
                 .send("Invalid Object! Does not match the Schema provided");
+        const creationDateValid = (0, dateValidator_1.isValidDate)(planBody.creationDate);
+        if (!creationDateValid) {
+            return res
+                .status(400)
+                .send("Invalid Date Object! Date not match the Schema provided. Make sure its DD-MM-YYYY format");
+        }
         const eTag = generateEtag(JSON.stringify(planBody));
         await redisClient.hset(objectID, "content", JSON.stringify(planBody), "Etag", eTag, (err) => {
             if (err)
@@ -108,7 +121,7 @@ const main = async () => {
         if (clientEtag && clientEtag === obj.Etag) {
             return res.status(304).send();
         }
-        res.status(200).send("Obj" + obj.content);
+        res.status(200).send("Obj" + JSON.stringify(obj));
     });
     app.delete("/plan/:id", async (req, res) => {
         const key = req.params.id;
