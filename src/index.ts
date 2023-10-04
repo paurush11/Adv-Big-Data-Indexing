@@ -34,7 +34,6 @@ const main = async () => {
       });
     }
   });
-
   app.delete("/schema", async (req, res) => {
     console.log("Deleting Json Schema from the redis client");
     const exists = await redisClient.exists("schema");
@@ -55,22 +54,23 @@ const main = async () => {
     if (!schema)
       return res.status(404).send("No Schema Found! Add a Schema first");
     const planBody = req.body;
-    const objectID: string = planBody.objectId !== undefined ? planBody.objectId : null ;
-   
-    if(!objectID)
-    return res
+    const objectID: string =
+      planBody.objectId !== undefined ? planBody.objectId : null;
+
+    if (!objectID)
+      return res
         .status(400)
         .send("Invalid Object! Does not match the Schema provided");
     /// Now check if the Object Exists already
     const obj = await redisClient.exists(objectID);
-    
-    if (obj){
-      const objectInPlan =  await redisClient.hgetall(objectID);
+
+    if (obj) {
+      const objectInPlan = await redisClient.hgetall(objectID);
       return res
-      .status(409)
-      .send("Object Already Exists!!!" + JSON.stringify(objectInPlan));
+        .status(409)
+        .send("Object Already Exists!!!" + JSON.stringify(objectInPlan));
     }
-      
+
     /// Validate object
     const validator = new Validator();
     const result = validator.validate(planBody, JSON.parse(schema as string));
@@ -79,13 +79,14 @@ const main = async () => {
         .status(400)
         .send("Invalid Object! Does not match the Schema provided");
 
-    ///check if the dates are valid or not 
-    const creationDateValid = isValidDate(planBody.creationDate)
-    if(!creationDateValid){
+    ///check if the dates are valid or not
+    const creationDateValid = isValidDate(planBody.creationDate);
+    if (!creationDateValid) {
       return res
-      .status(400)
-      .send("Invalid Date Object! Date not match the Schema provided. Make sure its DD-MM-YYYY format");
-
+        .status(400)
+        .send(
+          "Invalid Date Object! Date not match the Schema provided. Make sure its DD-MM-YYYY format",
+        );
     }
 
     const eTag = generateEtag(JSON.stringify(planBody));
@@ -102,7 +103,6 @@ const main = async () => {
     res.status(201).send("Object Successfully Saved");
   });
   app.get("/plan/:id", async (req, res) => {
-    
     const key = req.params.id;
     const obj = await redisClient.hgetall(key);
 
@@ -113,7 +113,6 @@ const main = async () => {
     if (clientEtag && clientEtag === obj.Etag) {
       return res.status(304).send();
     }
-  
 
     res.status(200).send("Obj" + JSON.stringify(obj));
   });
@@ -124,27 +123,21 @@ const main = async () => {
     if (!obj || !obj.content) {
       return res.status(404).send("No such Object Exists");
     }
-    const clientEtag = req.header("If-Match");
-    if (clientEtag && clientEtag === obj.Etag) {
-      await redisClient.del(key, (err, result) => {
-        if (err) {
-          return res.status(500).send("Error deleting plan.");
-        }
+    await redisClient.del(key, (err, result) => {
+      if (err) {
+        return res.status(500).send("Error deleting plan.");
+      }
 
-        if (result === 1) {
-          res.status(200).send("Plan successfully deleted.");
-        } else {
-          res.status(404).send("Plan not found.");
-        }
-      });
-    } else
-      return res
-        .status(500)
-        .send("You need an Etag to make sure the object is safe to delete");
-  });
+      if (result === 1) {
+        res.status(200).send("Plan successfully deleted.");
+      } else {
+        res.status(404).send("Plan not found.");
+      }
+    });
+  
+  })
 };
 
 main().catch((e) => {
   console.log("Error -", e);
 });
-

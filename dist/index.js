@@ -129,24 +129,17 @@ const main = async () => {
         if (!obj || !obj.content) {
             return res.status(404).send("No such Object Exists");
         }
-        const clientEtag = req.header("If-Match");
-        if (clientEtag && clientEtag === obj.Etag) {
-            await redisClient.del(key, (err, result) => {
-                if (err) {
-                    return res.status(500).send("Error deleting plan.");
-                }
-                if (result === 1) {
-                    res.status(200).send("Plan successfully deleted.");
-                }
-                else {
-                    res.status(404).send("Plan not found.");
-                }
-            });
-        }
-        else
-            return res
-                .status(500)
-                .send("You need an Etag to make sure the object is safe to delete");
+        await redisClient.del(key, (err, result) => {
+            if (err) {
+                return res.status(500).send("Error deleting plan.");
+            }
+            if (result === 1) {
+                res.status(200).send("Plan successfully deleted.");
+            }
+            else {
+                res.status(404).send("Plan not found.");
+            }
+        });
     });
 };
 main().catch((e) => {
