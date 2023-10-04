@@ -24,25 +24,29 @@ const main = async () => {
     if (data) {
       res.status(409).send("Schema Already Exists");
     } else {
-      await redisClient.set("schema", JSON.stringify(schema), (err, result) => {
-        if (err) {
-          res.status(500).send("Error in adding Schema");
-          console.log(err);
-        } else {
-          res.status(200).send("The Schema is Added");
-        }
-      });
+      await redisClient.set(
+        "schema",
+        JSON.stringify(schema),
+        (err, _result) => {
+          if (err) {
+            res.status(500).send("Error in adding Schema");
+            console.log(err);
+          } else {
+            res.status(200).send("The Schema is Added");
+          }
+        },
+      );
     }
   });
-  app.delete("/schema", async (req, res) => {
+  app.delete("/schema", async (_req, res) => {
     console.log("Deleting Json Schema from the redis client");
     const exists = await redisClient.exists("schema");
     if (!exists) return res.status(500).send("No such value to delete");
 
-    await redisClient.del("schema", (err, result) => {
+    return await redisClient.del("schema", (err, _result) => {
       if (err) return res.status(500).send("Error in deleting Schema");
       else {
-        res.status(200).send("Schema is deleted");
+        return res.status(200).send("Schema is deleted");
       }
     });
   });
@@ -100,7 +104,7 @@ const main = async () => {
         if (err) res.status(500).send("Error in saving value");
       },
     );
-    res.status(201).send("Object Successfully Saved");
+    return res.status(201).send("Object Successfully Saved");
   });
   app.get("/plan/:id", async (req, res) => {
     const key = req.params.id;
@@ -114,7 +118,7 @@ const main = async () => {
       return res.status(304).send();
     }
 
-    res.status(200).send("Obj" + JSON.stringify(obj));
+    return res.status(200).send("Obj" + JSON.stringify(obj));
   });
   app.delete("/plan/:id", async (req, res) => {
     const key = req.params.id;
@@ -123,19 +127,18 @@ const main = async () => {
     if (!obj || !obj.content) {
       return res.status(404).send("No such Object Exists");
     }
-    await redisClient.del(key, (err, result) => {
+    return await redisClient.del(key, (err, result) => {
       if (err) {
         return res.status(500).send("Error deleting plan.");
       }
 
       if (result === 1) {
-        res.status(200).send("Plan successfully deleted.");
+        return res.status(200).send("Plan successfully deleted.");
       } else {
-        res.status(404).send("Plan not found.");
+        return res.status(404).send("Plan not found.");
       }
     });
-  
-  })
+  });
 };
 
 main().catch((e) => {
