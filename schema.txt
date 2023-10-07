@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "JSON Schema",
+  "description": "JSON Schema for the Use Case",
+  "type": "object",
+  "properties": {
+    "planCostShares": { "$ref": "#/definitions/planCostShare" },
+    "linkedPlanServices": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/linkedPlanService" }
+    },
+    "_org": { "type": "string" },
+    "objectId": { "type": "string" },
+    "objectType": { "type": "string" },
+    "planType": { "type": "string" },
+    "creationDate": {
+      "type": "string",
+      "pattern": "^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[012])-(\\d{4})$"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "planCostShare": {
+      "type": "object",
+      "properties": {
+        "deductible": { "type": "number" },
+        "_org": { "type": "string" },
+        "copay": { "type": "number" },
+        "objectId": { "type": "string" },
+        "objectType": { "type": "string" }
+      },
+      "required": ["objectId", "objectType"]
+    },
+    "linkedPlanService": {
+      "type": "object",
+      "properties": {
+        "linkedService": { "$ref": "#/definitions/service" },
+        "planserviceCostShares": { "$ref": "#/definitions/planCostShare" },
+        "_org": { "type": "string" },
+        "objectId": { "type": "string" },
+        "objectType": { "type": "string" }
+      },
+      "required": ["objectId", "objectType"]
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "_org": { "type": "string" },
+        "objectId": { "type": "string" },
+        "objectType": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["objectId", "objectType"]
+    }
+  },
+  "required": ["objectId", "creationDate", "objectType"]
+}
