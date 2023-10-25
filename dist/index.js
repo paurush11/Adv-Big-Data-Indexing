@@ -31,6 +31,8 @@ const express_1 = __importDefault(require("express"));
 const ioredis_1 = __importDefault(require("ioredis"));
 const crypto = __importStar(require("crypto"));
 const dateValidator_1 = require("./utils/dateValidator");
+const modifyObject_1 = require("./utils/modifyObject");
+const jwtAuth_1 = require("./utils/jwtAuth");
 const { Validator } = require("jsonschema");
 const generateEtag = (content) => {
     return crypto.createHash("md5").update(content).digest("hex");
@@ -42,7 +44,22 @@ const main = async () => {
     app.listen(process.env.PORT, () => {
         console.log("using server, ", process.env.PORT);
     });
-    app.post("/schema", async (req, res) => {
+    app.get("/getToken", async (req, res) => {
+        try {
+            const response = await (0, jwtAuth_1.fetchAccessToken)();
+            const { access_token, expires_in, token_type } = response;
+            res.send({
+                access_token,
+                expires_in,
+                token_type,
+            });
+        }
+        catch (e) {
+            console.log(e);
+            res.status(e.response.status).send(e);
+        }
+    });
+    app.post("/schema", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         console.log("Adding Json Schema to the redis client");
         const schema = req.body;
         const data = await redisClient.get("schema");
@@ -61,7 +78,7 @@ const main = async () => {
             });
         }
     });
-    app.delete("/schema", async (_req, res) => {
+    app.delete("/schema", jwtAuth_1.verifyHeaderToken, async (_req, res) => {
         console.log("Deleting Json Schema from the redis client");
         const exists = await redisClient.exists("schema");
         if (!exists)
@@ -74,7 +91,7 @@ const main = async () => {
             }
         });
     });
-    app.post("/plan", async (req, res) => {
+    app.post("/plan", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         console.log("Adding a plan to the redis client");
         const schema = await redisClient.get("schema");
         if (!schema)
@@ -87,10 +104,8 @@ const main = async () => {
                 .send("Invalid Object! Does not match the Schema provided");
         const obj = await redisClient.exists(objectID);
         if (obj) {
-            const objectInPlan = await redisClient.hgetall(objectID);
-            return res
-                .status(409)
-                .send("Object Already Exists!!!" + JSON.stringify(objectInPlan));
+            const objectInPlan = await redisClient.get(objectID);
+            return res.status(409).send("Object Already Exists!!!" + objectInPlan);
         }
         const validator = new Validator();
         const result = validator.validate(planBody, JSON.parse(schema));
@@ -104,29 +119,30 @@ const main = async () => {
                 .status(400)
                 .send("Invalid Date Object! Date not match the Schema provided. Make sure its DD-MM-YYYY format");
         }
-        const eTag = generateEtag(JSON.stringify(planBody));
-        await redisClient.hset(objectID, "content", JSON.stringify(planBody), "Etag", eTag, (err) => {
+        console.log(objectID);
+        await redisClient.set(objectID, JSON.stringify(planBody), (err) => {
             if (err)
                 res.status(500).send("Error in saving value");
         });
         return res.status(201).send("Object Successfully Saved");
     });
-    app.get("/plan/:id", async (req, res) => {
+    app.get("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         const key = req.params.id;
-        const obj = await redisClient.hgetall(key);
-        if (!obj || !obj.content) {
+        const obj = await redisClient.get(key);
+        if (!obj) {
             return res.status(404).send("No such Object Exists");
         }
         const clientEtag = req.header("If-None-Match");
-        if (clientEtag && clientEtag === obj.Etag) {
+        const generatedEtag = generateEtag(JSON.stringify(obj));
+        if (clientEtag && clientEtag === generatedEtag) {
             return res.status(304).send();
         }
-        return res.status(200).send("Obj" + JSON.stringify(obj));
+        return res.status(200).send(obj);
     });
-    app.delete("/plan/:id", async (req, res) => {
+    app.delete("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         const key = req.params.id;
-        const obj = await redisClient.hgetall(key);
-        if (!obj || !obj.content) {
+        const obj = await redisClient.get(key);
+        if (!obj) {
             return res.status(404).send("No such Object Exists");
         }
         return await redisClient.del(key, (err, result) => {
@@ -140,6 +156,92 @@ const main = async () => {
                 return res.status(404).send("Plan not found.");
             }
         });
+    });
+    app.put("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
+        try {
+            const schema = await redisClient.get("schema");
+            if (!schema)
+                return res.status(404).send("No Schema Found! Add a Schema first");
+            const key = req.params.id;
+            const planBody = req.body;
+            const validator = new Validator();
+            const result = validator.validate(planBody, JSON.parse(schema));
+            if (!result.valid)
+                return res
+                    .status(400)
+                    .send("Invalid Object! Does not match the Schema provided");
+            if (!(0, dateValidator_1.isValidDate)(planBody.creationDate)) {
+                return res
+                    .status(400)
+                    .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
+            }
+            if (planBody.objectId === key) {
+                await redisClient.set(key, JSON.stringify(planBody), (err) => {
+                    if (err)
+                        return res.status(500).send("Error in saving value");
+                });
+            }
+            else {
+                await redisClient.set(planBody.objectId, JSON.stringify(planBody), (err) => {
+                    if (err)
+                        return res.status(500).send("Error in saving value");
+                });
+            }
+            const statusCode = (await redisClient.get(key)) ? 200 : 201;
+            return res.status(statusCode).send("Operation Successful");
+        }
+        catch (error) {
+            return res.status(500).send("Internal Server Error");
+        }
+    });
+    app.patch("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
+        try {
+            const schema = await redisClient.get("schema");
+            if (!schema)
+                return res.status(404).send("No Schema Found! Add a Schema first");
+            const key = req.params.id;
+            const updatedBody = req.body;
+            const obj = await redisClient.get(key);
+            if (!obj) {
+                return res.status(404).send("No such object found");
+            }
+            const updatedObject = (0, modifyObject_1.modifyObject)(JSON.parse(obj), updatedBody);
+            if (updatedObject &&
+                typeof updatedObject === "string" &&
+                updatedObject === "Wrong Object Type") {
+                return res
+                    .status(400)
+                    .send("Wrong Object Type Entered, Must be within the scope of the Schema");
+            }
+            const validator = new Validator();
+            const result = validator.validate(updatedObject, JSON.parse(schema));
+            if (!result.valid)
+                return res
+                    .status(400)
+                    .send("Invalid Object! Does not match the Schema provided");
+            if (!(0, dateValidator_1.isValidDate)(updatedObject.creationDate)) {
+                return res
+                    .status(400)
+                    .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
+            }
+            if (updatedObject.objectId === key) {
+                await redisClient.set(key, JSON.stringify(updatedObject), (err) => {
+                    if (err)
+                        return res.status(500).send("Error in saving value");
+                });
+                return res.status(200).send(updatedObject);
+            }
+            else {
+                await redisClient.set(updatedObject.objectId, JSON.stringify(updatedObject), (err) => {
+                    if (err)
+                        return res.status(500).send("Error in saving value");
+                });
+                return res.status(200).send(updatedObject);
+            }
+        }
+        catch (e) {
+            return res.status(500).send("Internal Server Error");
+        }
     });
 };
 main().catch((e) => {
