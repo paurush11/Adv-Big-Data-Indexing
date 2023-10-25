@@ -39,7 +39,7 @@ const verifyHeaderToken = (req, res, next) => {
     const token = req.headers.token;
     jwt.verify(token, getKey, {
         audience: process.env.AUDIENCE,
-        issuer: 'https://dev-5wdm80f4752j7i3c.us.auth0.com/',
+        issuer: process.env.ISSUER,
         algorithms: ['RS256']
     }, (err, decoded) => {
         if (err) {

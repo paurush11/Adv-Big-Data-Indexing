@@ -44,12 +44,11 @@ export const verifyHeaderToken = (req: Request, res: Response, next: NextFunctio
 
   jwt.verify(token,getKey, {
       audience: process.env.AUDIENCE,
-      issuer: 'https://dev-5wdm80f4752j7i3c.us.auth0.com/',
+      issuer: process.env.ISSUER,
       algorithms: ['RS256']
     }, (err: { message: any; }, decoded: any)=>{
       if(err){
         return res.status(500).send(err.message);
-       
       }else{
         next();
       }
