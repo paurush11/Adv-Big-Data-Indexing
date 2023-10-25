@@ -23,22 +23,22 @@ const main = async () => {
   ///JWT AUTH
 
   app.get("/getToken", async (req, res) => {
-    try{
+    try {
       const response = await fetchAccessToken();
-      const { access_token, expires_in, token_type } = response
+      const { access_token, expires_in, token_type } = response;
       res.send({
         access_token,
         expires_in,
         token_type,
       });
-    }catch(e){
-      console.log(e)
+    } catch (e) {
+      console.log(e);
       res.status(e.response.status).send(e);
     }
   });
 
   /// Schema
-  app.post("/schema",verifyHeaderToken, async (req, res) => {
+  app.post("/schema", verifyHeaderToken, async (req, res) => {
     console.log("Adding Json Schema to the redis client");
     const schema: JSON = req.body as JSON;
     const data = await redisClient.get("schema");
@@ -59,7 +59,7 @@ const main = async () => {
       );
     }
   });
-  app.delete("/schema",verifyHeaderToken, async (_req, res) => {
+  app.delete("/schema", verifyHeaderToken, async (_req, res) => {
     console.log("Deleting Json Schema from the redis client");
     const exists = await redisClient.exists("schema");
     if (!exists) return res.status(500).send("No such value to delete");
@@ -72,11 +72,9 @@ const main = async () => {
     });
   });
   // plans
-  app.post("/plan", verifyHeaderToken,async (req, res) => {
+  app.post("/plan", verifyHeaderToken, async (req, res) => {
     console.log("Adding a plan to the redis client");
     const schema = await redisClient.get("schema");
-
-    
 
     if (!schema)
       return res.status(404).send("No Schema Found! Add a Schema first");
@@ -119,7 +117,7 @@ const main = async () => {
     });
     return res.status(201).send("Object Successfully Saved");
   });
-  app.get("/plan/:id",verifyHeaderToken, async (req, res) => {
+  app.get("/plan/:id", verifyHeaderToken, async (req, res) => {
     const key = req.params.id;
     const obj = await redisClient.get(key as string);
 
@@ -135,7 +133,7 @@ const main = async () => {
 
     return res.status(200).send(obj);
   });
-  app.delete("/plan/:id",verifyHeaderToken, async (req, res) => {
+  app.delete("/plan/:id", verifyHeaderToken, async (req, res) => {
     const key = req.params.id;
     const obj = await redisClient.get(key);
 
@@ -154,7 +152,7 @@ const main = async () => {
       }
     });
   });
-  app.put("/plan/:id",verifyHeaderToken, async (req, res) => {
+  app.put("/plan/:id", verifyHeaderToken, async (req, res) => {
     try {
       const schema = await redisClient.get("schema");
       if (!schema)
@@ -196,7 +194,7 @@ const main = async () => {
       return res.status(500).send("Internal Server Error");
     }
   });
-  app.patch("/plan/:id", verifyHeaderToken,async (req, res) => {
+  app.patch("/plan/:id", verifyHeaderToken, async (req, res) => {
     try {
       const schema = await redisClient.get("schema");
       if (!schema)

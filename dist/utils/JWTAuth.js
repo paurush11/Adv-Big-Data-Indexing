@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.verifyHeaderToken = exports.fetchAccessToken = void 0;
 const axios_1 = __importDefault(require("axios"));
 const jwt = require("jsonwebtoken");
-const jwksClient = require('jwks-rsa');
+const jwksClient = require("jwks-rsa");
 async function fetchAccessToken() {
     try {
         const response = await axios_1.default.post(process.env.DOMAIN_URL || "", {
@@ -27,7 +27,7 @@ async function fetchAccessToken() {
 }
 exports.fetchAccessToken = fetchAccessToken;
 const client = jwksClient({
-    jwksUri: process.env.MY_KEYS
+    jwksUri: process.env.MY_KEYS,
 });
 const getKey = (header, callBack) => {
     client.getSigningKey(header.kid, function (err, key) {
@@ -40,7 +40,7 @@ const verifyHeaderToken = (req, res, next) => {
     jwt.verify(token, getKey, {
         audience: process.env.AUDIENCE,
         issuer: process.env.ISSUER,
-        algorithms: ['RS256']
+        algorithms: ["RS256"],
     }, (err, decoded) => {
         if (err) {
             return res.status(500).send(err.message);
