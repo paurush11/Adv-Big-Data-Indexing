@@ -1,11 +1,11 @@
-import "dotenv/config";
-import express, { NextFunction, Request, Response } from "express";
-import Redis from "ioredis";
 import * as crypto from "crypto";
+import "dotenv/config";
+import express from "express";
+import Redis from "ioredis";
 import { isValidDate } from "./utils/dateValidator";
+import { fetchAccessToken, verifyHeaderToken } from "./utils/jwtAuth";
 import { modifyObject } from "./utils/modifyObject";
 import { mainObject } from "./utils/types";
-import { fetchAccessToken, verifyHeaderToken } from "./utils/jwtAuth";
 
 const { Validator } = require("jsonschema");
 
@@ -22,7 +22,7 @@ const main = async () => {
   });
   ///JWT AUTH
 
-  app.get("/getToken", async (req, res) => {
+  app.get("/getToken", async (_req, res) => {
     try {
       const response = await fetchAccessToken();
       const { access_token, expires_in, token_type } = response;
@@ -111,10 +111,13 @@ const main = async () => {
           "Invalid Date Object! Date not match the Schema provided. Make sure its DD-MM-YYYY format",
         );
     }
-    console.log(objectID);
+
     await redisClient.set(objectID, JSON.stringify(planBody), (err) => {
       if (err) res.status(500).send("Error in saving value");
     });
+
+    const generatedEtag = generateEtag(JSON.stringify(planBody));
+    res.setHeader("ETag", generatedEtag);
     return res.status(201).send("Object Successfully Saved");
   });
   app.get("/plan/:id", verifyHeaderToken, async (req, res) => {
@@ -125,12 +128,12 @@ const main = async () => {
       return res.status(404).send("No such Object Exists");
     }
     const clientEtag = req.header("If-None-Match");
-    const generatedEtag = generateEtag(JSON.stringify(obj));
+    const generatedEtag = generateEtag(obj);
 
     if (clientEtag && clientEtag === generatedEtag) {
       return res.status(304).send();
     }
-
+    res.setHeader("ETag", generatedEtag);
     return res.status(200).send(obj);
   });
   app.delete("/plan/:id", verifyHeaderToken, async (req, res) => {
@@ -161,6 +164,16 @@ const main = async () => {
       const key = req.params.id;
       const planBody = req.body;
 
+      const obj = await redisClient.get(key);
+      if (!obj) return res.status(404).send("No such Object Exists");
+
+      const clientEtag = req.header("If-Match");
+      const generatedEtag = generateEtag(obj);
+
+      if (clientEtag && clientEtag === generatedEtag) {
+        return res.status(304).send();
+      }
+
       const validator = new Validator();
       const result = validator.validate(planBody, JSON.parse(schema as string));
       if (!result.valid)
@@ -173,23 +186,14 @@ const main = async () => {
           .status(400)
           .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
       }
-      if ((planBody as mainObject).objectId === key) {
-        await redisClient.set(key, JSON.stringify(planBody), (err) => {
-          if (err) return res.status(500).send("Error in saving value");
-        });
-      } else {
-        await redisClient.set(
-          (planBody as mainObject).objectId,
-          JSON.stringify(planBody),
-          (err) => {
-            if (err) return res.status(500).send("Error in saving value");
-          },
-        );
-      }
 
-      // Decide on the status code based on the presence of the object before the operation.
-      const statusCode = (await redisClient.get(key)) ? 200 : 201;
-      return res.status(statusCode).send("Operation Successful");
+      await redisClient.set(key, JSON.stringify(planBody), (err) => {
+        if (err) return res.status(500).send("Error in saving value");
+      });
+
+      res.setHeader("ETag", generatedEtag);
+      const statusCode = 200;
+      return res.status(statusCode).send(planBody);
     } catch (error) {
       return res.status(500).send("Internal Server Error");
     }
@@ -207,10 +211,10 @@ const main = async () => {
       if (!obj) {
         return res.status(404).send("No such object found");
       }
-      // const updatedObject = { ...JSON.parse(obj), ...updatedBody };
+
+      const clientEtag = req.header("If-Match");
 
       const updatedObject = modifyObject(JSON.parse(obj), updatedBody);
-
       if (
         updatedObject &&
         typeof updatedObject === "string" &&
@@ -222,11 +226,13 @@ const main = async () => {
             "Wrong Object Type Entered, Must be within the scope of the Schema",
           );
       }
+      console.log(updatedObject);
       const validator = new Validator();
       const result = validator.validate(
         updatedObject,
         JSON.parse(schema as string),
       );
+
       if (!result.valid)
         return res
           .status(400)
@@ -237,24 +243,16 @@ const main = async () => {
           .status(400)
           .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
       }
-      if ((updatedObject as mainObject).objectId === key) {
-        await redisClient.set(key, JSON.stringify(updatedObject), (err) => {
-          if (err) return res.status(500).send("Error in saving value");
-        });
+      const generatedEtag = generateEtag(JSON.stringify(updatedObject));
 
-        return res.status(200).send(updatedObject);
-        ///same
-      } else {
-        await redisClient.set(
-          (updatedObject as mainObject).objectId,
-          JSON.stringify(updatedObject),
-          (err) => {
-            if (err) return res.status(500).send("Error in saving value");
-          },
-        );
-
-        return res.status(200).send(updatedObject);
+      if (clientEtag && clientEtag === generatedEtag) {
+        return res.status(304).send();
       }
+      await redisClient.set(key, JSON.stringify(updatedObject), (err) => {
+        if (err) return res.status(500).send("Error in saving value");
+      });
+      res.setHeader("ETag", generatedEtag);
+      return res.status(200).send(updatedObject);
     } catch (e) {
       return res.status(500).send("Internal Server Error");
     }
@@ -265,5 +263,9 @@ main().catch((e) => {
   console.log("Error -", e);
 });
 
-/// api for jwt auth
-/// put re complete
+/// Requirements -
+// 1 - Crud Operations
+// 2 - Using JWT with RS256 for encryption
+// 3 - Validation of data
+// 4 - if None Match and If match for get and put/patch
+// 5 - Put/Patch  should not work if there is no id

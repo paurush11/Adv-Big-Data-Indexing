@@ -1,4 +1,4 @@
-import { linkedPlanService, mainObject, planCostShare } from "./types";
+import { linkedPlanService, mainObject } from "./types";
 
 const isService = (obj: any): boolean => {
   return (
@@ -49,34 +49,37 @@ export const modifyObject = (
     return "Wrong Object Type";
   }
   let updatedObject = { ...earlyObj };
-  ///shallow merge done
+
+  for (let key of newKeys) {
+    if (key === "objectId") {
+      continue;
+    } else if (key !== "planCostShares" && key !== "linkedPlanServices") {
+      updatedObject[key] = newObject[key];
+    }
+  }
+
   if (newKeys.includes("planCostShares")) {
     for (let key in newObject["planCostShares"]) {
-      if (updatedObject.planCostShares.hasOwnProperty(key)) {
-        updatedObject.planCostShares[key] = newObject["planCostShares"][key];
-      }
+      // if (updatedObject.planCostShares.hasOwnProperty(key)) {
+      updatedObject.planCostShares[key] = newObject["planCostShares"][key];
+      // }
     }
   }
 
   if (newKeys.includes("linkedPlanServices")) {
-    // Create a map of the existing services by objectId for quick look-up
+    if (!updatedObject["linkedPlanServices"]) {
+      updatedObject["linkedPlanServices"] = [];
+    }
     const serviceMap = new Map(
       updatedObject["linkedPlanServices"].map((service: linkedPlanService) => [
         service.objectId,
         service,
       ]),
     );
-
     newObject["linkedPlanServices"].forEach((e: any) => {
-      // If the service exists, update it; otherwise, add it.
       serviceMap.set(e.objectId, e);
     });
-
-    // Convert the map back to an array
     updatedObject["linkedPlanServices"] = [...serviceMap.values()];
-  }
-  if (newKeys.includes("objectId")) {
-    (updatedObject as mainObject).objectId = newObject.objectId;
   }
 
   return updatedObject as mainObject;

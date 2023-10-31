@@ -38,14 +38,23 @@ const modifyObject = (earlyObj, newObject) => {
         return "Wrong Object Type";
     }
     let updatedObject = Object.assign({}, earlyObj);
+    for (let key of newKeys) {
+        if (key === "objectId") {
+            continue;
+        }
+        else if (key !== "planCostShares" && key !== "linkedPlanServices") {
+            updatedObject[key] = newObject[key];
+        }
+    }
     if (newKeys.includes("planCostShares")) {
         for (let key in newObject["planCostShares"]) {
-            if (updatedObject.planCostShares.hasOwnProperty(key)) {
-                updatedObject.planCostShares[key] = newObject["planCostShares"][key];
-            }
+            updatedObject.planCostShares[key] = newObject["planCostShares"][key];
         }
     }
     if (newKeys.includes("linkedPlanServices")) {
+        if (!updatedObject["linkedPlanServices"]) {
+            updatedObject["linkedPlanServices"] = [];
+        }
         const serviceMap = new Map(updatedObject["linkedPlanServices"].map((service) => [
             service.objectId,
             service,
@@ -54,9 +63,6 @@ const modifyObject = (earlyObj, newObject) => {
             serviceMap.set(e.objectId, e);
         });
         updatedObject["linkedPlanServices"] = [...serviceMap.values()];
-    }
-    if (newKeys.includes("objectId")) {
-        updatedObject.objectId = newObject.objectId;
     }
     return updatedObject;
 };
