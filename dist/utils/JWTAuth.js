@@ -36,8 +36,10 @@ const getKey = (header, callBack) => {
     });
 };
 const verifyHeaderToken = (req, res, next) => {
+    console.log(req.headers.authorization);
     const token = req.headers.token;
-    jwt.verify(token, getKey, {
+    const newToken = req.headers.authorization.split(' ')[1];
+    jwt.verify(newToken, getKey, {
         audience: process.env.AUDIENCE,
         issuer: process.env.ISSUER,
         algorithms: ["RS256"],

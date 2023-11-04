@@ -166,13 +166,15 @@ const main = async () => {
 
       const obj = await redisClient.get(key);
       if (!obj) return res.status(404).send("No such Object Exists");
-
+     
+      
       const clientEtag = req.header("If-Match");
       const generatedEtag = generateEtag(obj);
-
-      if (clientEtag && clientEtag === generatedEtag) {
-        return res.status(304).send();
+      
+      if (clientEtag && clientEtag !== generatedEtag) {
+        return res.status(412).send("Precondition failed");
       }
+      
 
       const validator = new Validator();
       const result = validator.validate(planBody, JSON.parse(schema as string));
@@ -212,7 +214,7 @@ const main = async () => {
         return res.status(404).send("No such object found");
       }
 
-      const clientEtag = req.header("If-Match");
+    
 
       const updatedObject = modifyObject(JSON.parse(obj), updatedBody);
       if (
@@ -243,14 +245,18 @@ const main = async () => {
           .status(400)
           .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
       }
-      const generatedEtag = generateEtag(JSON.stringify(updatedObject));
-
-      if (clientEtag && clientEtag === generatedEtag) {
-        return res.status(304).send();
+      const clientEtag = req.header("If-Match");
+      let  generatedEtag = generateEtag(obj);
+    
+      
+      if (clientEtag && clientEtag !== generatedEtag) {
+        return res.status(412).send("Precondition failed");
       }
+
       await redisClient.set(key, JSON.stringify(updatedObject), (err) => {
         if (err) return res.status(500).send("Error in saving value");
       });
+      generatedEtag = generateEtag(JSON.stringify(updatedObject));
       res.setHeader("ETag", generatedEtag);
       return res.status(200).send(updatedObject);
     } catch (e) {
