@@ -286,6 +286,7 @@ const main = async () => {
     app.get("/search/plans", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         try {
             const searchCriteria = req.query;
+            console.log(searchCriteria);
             if (!searchCriteria || Object.keys(searchCriteria).length === 0) {
                 return res.status(400).send("Search criteria are required");
             }
@@ -295,7 +296,7 @@ const main = async () => {
                 },
             };
             for (const [field, value] of Object.entries(searchCriteria)) {
-                query.bool.must.push({ match: { [field]: value } });
+                query.bool.must.push({ match_phrase: { [field]: value } });
             }
             const searchResult = await esClient.search({
                 index: "plans",
@@ -303,7 +304,7 @@ const main = async () => {
                     query,
                 },
             });
-            console.log(searchResult);
+            console.log(query.bool.must);
             return res.status(200).json(searchResult.hits.hits);
         }
         catch (error) {

@@ -47,7 +47,7 @@ export const verifyHeaderToken = (
   res: Response,
   next: NextFunction,
 ) => {
-  console.log(req.headers.authorization);
+  // console.log(req.headers.authorization);
   const token = req.headers.token;
   const newToken = req.headers.authorization!.split(" ")[1];
   jwt.verify(
