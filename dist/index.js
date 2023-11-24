@@ -33,11 +33,26 @@ const ioredis_1 = __importDefault(require("ioredis"));
 const dateValidator_1 = require("./utils/dateValidator");
 const jwtAuth_1 = require("./utils/jwtAuth");
 const modifyObject_1 = require("./utils/modifyObject");
+const fs = require("fs");
+const { Client } = require("@elastic/elasticsearch");
 const { Validator } = require("jsonschema");
 const generateEtag = (content) => {
     return crypto.createHash("md5").update(content).digest("hex");
 };
 const main = async () => {
+    const runcommand = `export NODE_EXTRA_CA_CERTS="/Users/paurushbatish/Desktop/react/bigdataIndexingProject/cert/http_ca.crt"`;
+    const esClient = new Client({
+        node: "https://localhost:9200",
+        auth: {
+            username: "elastic",
+            password: "rS-ArgUdo--zsSGZv+Vf",
+        },
+        ssl: {
+            ca: fs.readFileSync("cert/http_ca.crt"),
+            rejectUnauthorized: true,
+        },
+    });
+    const resp = await esClient.info();
     const app = (0, express_1.default)();
     const redisClient = new ioredis_1.default();
     app.use(express_1.default.json());
@@ -125,6 +140,11 @@ const main = async () => {
         });
         const generatedEtag = generateEtag(JSON.stringify(planBody));
         res.setHeader("ETag", generatedEtag);
+        await esClient.index({
+            index: "plans",
+            id: objectID,
+            body: planBody,
+        });
         return res.status(201).send("Object Successfully Saved");
     });
     app.get("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
@@ -147,11 +167,15 @@ const main = async () => {
         if (!obj) {
             return res.status(404).send("No such Object Exists");
         }
-        return await redisClient.del(key, (err, result) => {
+        return await redisClient.del(key, async (err, result) => {
             if (err) {
                 return res.status(500).send("Error deleting plan.");
             }
             if (result === 1) {
+                await esClient.delete({
+                    index: "plans",
+                    id: key,
+                });
                 return res.status(200).send("Plan successfully deleted.");
             }
             else {
@@ -171,7 +195,7 @@ const main = async () => {
                 return res.status(404).send("No such Object Exists");
             const clientEtag = req.header("If-Match");
             const generatedEtag = generateEtag(obj);
-            if (clientEtag && clientEtag !== generatedEtag) {
+            if (!clientEtag || (clientEtag && clientEtag !== generatedEtag)) {
                 return res.status(412).send("Precondition failed");
             }
             const validator = new Validator();
@@ -191,6 +215,13 @@ const main = async () => {
             });
             res.setHeader("ETag", generatedEtag);
             const statusCode = 200;
+            await esClient.update({
+                index: "plans",
+                id: key,
+                body: {
+                    doc: planBody,
+                },
+            });
             return res.status(statusCode).send(planBody);
         }
         catch (error) {
@@ -230,7 +261,7 @@ const main = async () => {
             }
             const clientEtag = req.header("If-Match");
             let generatedEtag = generateEtag(obj);
-            if (clientEtag && clientEtag !== generatedEtag) {
+            if (!clientEtag || (clientEtag && clientEtag !== generatedEtag)) {
                 return res.status(412).send("Precondition failed");
             }
             await redisClient.set(key, JSON.stringify(updatedObject), (err) => {
@@ -239,9 +270,44 @@ const main = async () => {
             });
             generatedEtag = generateEtag(JSON.stringify(updatedObject));
             res.setHeader("ETag", generatedEtag);
+            await esClient.update({
+                index: "plans",
+                id: key,
+                body: {
+                    doc: updatedObject,
+                },
+            });
             return res.status(200).send(updatedObject);
         }
         catch (e) {
+            return res.status(500).send("Internal Server Error");
+        }
+    });
+    app.get("/search/plans", jwtAuth_1.verifyHeaderToken, async (req, res) => {
+        try {
+            const searchCriteria = req.query;
+            if (!searchCriteria || Object.keys(searchCriteria).length === 0) {
+                return res.status(400).send("Search criteria are required");
+            }
+            let query = {
+                bool: {
+                    must: [],
+                },
+            };
+            for (const [field, value] of Object.entries(searchCriteria)) {
+                query.bool.must.push({ match: { [field]: value } });
+            }
+            const searchResult = await esClient.search({
+                index: "plans",
+                body: {
+                    query,
+                },
+            });
+            console.log(searchResult);
+            return res.status(200).json(searchResult.hits.hits);
+        }
+        catch (error) {
+            console.error("Error during search", error);
             return res.status(500).send("Internal Server Error");
         }
     });

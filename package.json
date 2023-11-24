@@ -34,6 +34,7 @@
   },
   "homepage": "https://github.com/paurush11/Adv-Big-Data-Indexing#readme",
   "dependencies": {
+    "@elastic/elasticsearch": "^8.10.0",
     "@types/connect-redis": "^0.0.20",
     "@types/express-jwt": "^7.4.2",
     "@types/redis": "^4.0.11",
