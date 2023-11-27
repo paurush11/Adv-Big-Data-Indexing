@@ -243,7 +243,7 @@ const main = async () => {
       );
 
       const clientEtag = req.header("If-Match");
-      let generatedEtag = generateEtag(reconstructedOldObject);
+      let generatedEtag = generateEtag(JSON.stringify(reconstructedOldObject));
 
       if (clientEtag && clientEtag !== generatedEtag) {
         return res.status(412).send("Precondition failed");
@@ -344,7 +344,7 @@ const main = async () => {
           .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
       }
       const clientEtag = req.header("If-Match");
-      let generatedEtag = generateEtag(obj);
+      let generatedEtag = generateEtag(JSON.stringify(reconstructedOldObject));
       /// this is etag value of saved object. Compared with that of provided by user
 
       if (clientEtag && clientEtag !== generatedEtag) {
