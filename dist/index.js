@@ -1,51 +1,25 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const crypto = __importStar(require("crypto"));
 require("dotenv/config");
 const express_1 = __importDefault(require("express"));
 const ioredis_1 = __importDefault(require("ioredis"));
 const dateValidator_1 = require("./utils/dateValidator");
+const elasticSearch_1 = require("./utils/elasticSearch");
 const jwtAuth_1 = require("./utils/jwtAuth");
 const modifyObject_1 = require("./utils/modifyObject");
 const fs = require("fs");
 const { Client } = require("@elastic/elasticsearch");
 const { Validator } = require("jsonschema");
-const generateEtag = (content) => {
-    return crypto.createHash("md5").update(content).digest("hex");
-};
 const main = async () => {
     const runcommand = `export NODE_EXTRA_CA_CERTS="/Users/paurushbatish/Desktop/react/bigdataIndexingProject/cert/http_ca.crt"`;
     const esClient = new Client({
-        node: "https://localhost:9200",
+        node: process.env.ES_NODE,
         auth: {
-            username: "elastic",
-            password: "rS-ArgUdo--zsSGZv+Vf",
+            username: process.env.ES_USERNAME || "",
+            password: process.env.ES_PASSWORD || "",
         },
         ssl: {
             ca: fs.readFileSync("cert/http_ca.crt"),
@@ -134,17 +108,21 @@ const main = async () => {
                 .status(400)
                 .send("Invalid Date Object! Date not match the Schema provided. Make sure its DD-MM-YYYY format");
         }
-        await redisClient.set(objectID, JSON.stringify(planBody), (err) => {
-            if (err)
-                res.status(500).send("Error in saving value");
-        });
-        const generatedEtag = generateEtag(JSON.stringify(planBody));
+        const fetchSavedObject = await (0, elasticSearch_1.saveObjectGenerate)(planBody, redisClient, esClient);
+        try {
+            (0, elasticSearch_1.saveObject)(fetchSavedObject.objectId, fetchSavedObject, redisClient);
+        }
+        catch (e) {
+            res.status(500).send("Error in saving value");
+        }
+        const generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
         res.setHeader("ETag", generatedEtag);
         await esClient.index({
             index: "plans",
             id: objectID,
-            body: planBody,
+            body: fetchSavedObject,
         });
+        await (0, elasticSearch_1.generateRelationships)(planBody, esClient);
         return res.status(201).send("Object Successfully Saved");
     });
     app.get("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
@@ -154,12 +132,15 @@ const main = async () => {
             return res.status(404).send("No such Object Exists");
         }
         const clientEtag = req.header("If-None-Match");
-        const generatedEtag = generateEtag(obj);
+        const mainObject = JSON.parse(obj);
+        const reconstructedMainObject = await (0, elasticSearch_1.reconstructObject)(mainObject, redisClient, esClient);
+        console.log(mainObject);
+        const generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(reconstructedMainObject));
         if (clientEtag && clientEtag === generatedEtag) {
             return res.status(304).send();
         }
         res.setHeader("ETag", generatedEtag);
-        return res.status(200).send(obj);
+        return res.status(200).send(reconstructedMainObject);
     });
     app.delete("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         const key = req.params.id;
@@ -172,10 +153,6 @@ const main = async () => {
                 return res.status(500).send("Error deleting plan.");
             }
             if (result === 1) {
-                await esClient.delete({
-                    index: "plans",
-                    id: key,
-                });
                 return res.status(200).send("Plan successfully deleted.");
             }
             else {
@@ -193,9 +170,10 @@ const main = async () => {
             const obj = await redisClient.get(key);
             if (!obj)
                 return res.status(404).send("No such Object Exists");
+            const reconstructedOldObject = await (0, elasticSearch_1.reconstructObject)(JSON.parse(obj), redisClient, esClient);
             const clientEtag = req.header("If-Match");
-            const generatedEtag = generateEtag(obj);
-            if (!clientEtag || (clientEtag && clientEtag !== generatedEtag)) {
+            let generatedEtag = (0, jwtAuth_1.generateEtag)(reconstructedOldObject);
+            if (clientEtag && clientEtag !== generatedEtag) {
                 return res.status(412).send("Precondition failed");
             }
             const validator = new Validator();
@@ -209,19 +187,25 @@ const main = async () => {
                     .status(400)
                     .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
             }
-            await redisClient.set(key, JSON.stringify(planBody), (err) => {
-                if (err)
-                    return res.status(500).send("Error in saving value");
-            });
+            const fetchSavedObject = await (0, elasticSearch_1.saveObjectGenerate)(planBody, redisClient, esClient);
+            console.log(fetchSavedObject);
+            try {
+                (0, elasticSearch_1.saveObject)(key, fetchSavedObject, redisClient);
+            }
+            catch (e) {
+                res.status(500).send("Error in saving value");
+            }
+            generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
             res.setHeader("ETag", generatedEtag);
             const statusCode = 200;
             await esClient.update({
                 index: "plans",
                 id: key,
                 body: {
-                    doc: planBody,
+                    doc: fetchSavedObject,
                 },
             });
+            await (0, elasticSearch_1.generateRelationships)(planBody, esClient);
             return res.status(statusCode).send(planBody);
         }
         catch (error) {
@@ -239,7 +223,8 @@ const main = async () => {
             if (!obj) {
                 return res.status(404).send("No such object found");
             }
-            const updatedObject = (0, modifyObject_1.modifyObject)(JSON.parse(obj), updatedBody);
+            const reconstructedOldObject = await (0, elasticSearch_1.reconstructObject)(JSON.parse(obj), redisClient, esClient);
+            const updatedObject = (0, modifyObject_1.modifyObject)(reconstructedOldObject, updatedBody);
             if (updatedObject &&
                 typeof updatedObject === "string" &&
                 updatedObject === "Wrong Object Type") {
@@ -260,24 +245,30 @@ const main = async () => {
                     .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
             }
             const clientEtag = req.header("If-Match");
-            let generatedEtag = generateEtag(obj);
-            if (!clientEtag || (clientEtag && clientEtag !== generatedEtag)) {
+            let generatedEtag = (0, jwtAuth_1.generateEtag)(obj);
+            if (clientEtag && clientEtag !== generatedEtag) {
                 return res.status(412).send("Precondition failed");
             }
-            await redisClient.set(key, JSON.stringify(updatedObject), (err) => {
-                if (err)
-                    return res.status(500).send("Error in saving value");
-            });
-            generatedEtag = generateEtag(JSON.stringify(updatedObject));
+            const fetchSavedObject = await (0, elasticSearch_1.saveObjectGenerate)(updatedObject, redisClient, esClient);
+            console.log(fetchSavedObject);
+            try {
+                (0, elasticSearch_1.saveObject)(key, fetchSavedObject, redisClient);
+            }
+            catch (e) {
+                res.status(500).send("Error in saving value");
+            }
+            generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(updatedObject));
             res.setHeader("ETag", generatedEtag);
             await esClient.update({
                 index: "plans",
                 id: key,
                 body: {
-                    doc: updatedObject,
+                    doc: fetchSavedObject,
                 },
             });
-            return res.status(200).send(updatedObject);
+            const reconstructedMainObject = await (0, elasticSearch_1.reconstructObject)(fetchSavedObject, redisClient, esClient);
+            await (0, elasticSearch_1.generateRelationships)(reconstructedMainObject, esClient);
+            return res.status(200).send(reconstructedMainObject);
         }
         catch (e) {
             return res.status(500).send("Internal Server Error");
@@ -310,6 +301,128 @@ const main = async () => {
         catch (error) {
             console.error("Error during search", error);
             return res.status(500).send("Internal Server Error");
+        }
+    });
+    app.get("/allResults", jwtAuth_1.verifyHeaderToken, async (req, res) => {
+        try {
+            const index = req.params;
+            const documents = await (0, elasticSearch_1.fetchAllDocuments)(index.index, esClient);
+            res.json(documents.hits.hits);
+        }
+        catch (error) {
+            res.status(500).send("Error fetching documents");
+        }
+    });
+    app.get("/allChildrenHavingCopayLessOrGreater", jwtAuth_1.verifyHeaderToken, async (req, res) => {
+        try {
+            const fields = req.query;
+            let lessQ = false;
+            if (fields.lt === 'true') {
+                console.log(fields);
+                lessQ = true;
+            }
+            const query = lessQ ? {
+                query: {
+                    has_child: {
+                        type: "planCostShares",
+                        query: {
+                            range: {
+                                copay: {
+                                    lt: fields.copay
+                                },
+                            },
+                        },
+                    },
+                },
+            } : {
+                query: {
+                    has_child: {
+                        type: "planCostShares",
+                        query: {
+                            range: {
+                                copay: {
+                                    gt: fields.copay
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+            const body = await esClient.search({
+                index: "plans",
+                body: query,
+            });
+            const allPlans = [];
+            body.hits.hits.forEach((element) => {
+                allPlans.push(element._source);
+            });
+            const promises = allPlans.map((val) => {
+                return (async () => {
+                    return await (0, elasticSearch_1.reconstructObject)(val, redisClient, esClient);
+                })();
+            });
+            const allPlansRestructured = await Promise.all(promises);
+            return res.status(200).send(allPlansRestructured);
+        }
+        catch (error) {
+            console.error("Error fetching documents:", error);
+            res.status(500).send("Error fetching documents");
+        }
+    });
+    app.get("/allParentsHaving", jwtAuth_1.verifyHeaderToken, async (req, res) => {
+        try {
+            const fields = req.query;
+            const query = {
+                query: {
+                    has_child: {
+                        type: fields.type,
+                        query: {
+                            bool: {
+                                must: [],
+                            },
+                        },
+                    },
+                },
+            };
+            for (const [keys, vals] of Object.entries(fields)) {
+                if (keys === "type") {
+                    continue;
+                }
+                else {
+                    query.query.has_child.query.bool.must.push({
+                        match_phrase: { [keys]: vals },
+                    });
+                }
+            }
+            const body = await esClient.search({
+                index: "plans",
+                body: query,
+            });
+            const totalNoOfPlans = body.hits.total.value;
+            const allPlans = [];
+            body.hits.hits.forEach((element) => {
+                allPlans.push(element._source);
+            });
+            const promises = allPlans.map((val) => {
+                return (async () => {
+                    return await (0, elasticSearch_1.reconstructObject)(val, redisClient, esClient);
+                })();
+            });
+            const allPlansRestructured = await Promise.all(promises);
+            return res.status(200).send(allPlansRestructured);
+        }
+        catch (error) {
+            console.error("Error fetching documents:", error);
+            res.status(500).send("Error fetching documents");
+        }
+    });
+    app.get("/getMapping", jwtAuth_1.verifyHeaderToken, async (_req, res) => {
+        try {
+            const response = await (0, elasticSearch_1.getMapping)(esClient);
+            res.status(200).send(response);
+        }
+        catch (e) {
+            res.status(404).send("Not Found");
         }
     });
 };

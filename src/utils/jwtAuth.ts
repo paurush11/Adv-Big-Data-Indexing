@@ -1,10 +1,10 @@
 import axios from "axios";
 import { NextFunction, Request, Response } from "express";
-
+import * as crypto from "crypto";
 const jwt = require("jsonwebtoken");
 const jwksClient = require("jwks-rsa");
 
-export async function fetchAccessToken() {
+async function fetchAccessToken() {
   try {
     const response = await axios.post(
       process.env.DOMAIN_URL || "",
@@ -42,11 +42,7 @@ const getKey = (
     },
   );
 };
-export const verifyHeaderToken = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+const verifyHeaderToken = (req: Request, res: Response, next: NextFunction) => {
   // console.log(req.headers.authorization);
   const token = req.headers.token;
   const newToken = req.headers.authorization!.split(" ")[1];
@@ -67,3 +63,9 @@ export const verifyHeaderToken = (
     },
   );
 };
+
+const generateEtag = (content: string): string => {
+  return crypto.createHash("md5").update(content).digest("hex");
+};
+
+export { generateEtag, verifyHeaderToken, fetchAccessToken };
