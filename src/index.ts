@@ -38,9 +38,9 @@ const main = async () => {
     },
   });
   // await getMapping(esClient);
-    // await createElasticsearchMappings(esClient);
-      // await esClient.indices.delete({ index: 'plans' });
-    // deleteAllDocuments('plans', esClient)
+  // await createElasticsearchMappings(esClient);
+  // await esClient.indices.delete({ index: 'plans' });
+  // deleteAllDocuments('plans', esClient)
   //  const val =  await fetchAllDocuments('plans', esClient)
   //  console.log(val.hits)
 
@@ -432,119 +432,119 @@ const main = async () => {
       res.status(500).send("Error fetching documents");
     }
   });
-  app.get("/allChildrenHavingCopayLessOrGreater", verifyHeaderToken, async (req, res) => {
-    try {
-      const fields = req.query;
-      let lessQ = false;
-      if(fields.lt === 'true'){
-        console.log(fields)
-        lessQ = true;
-      }
-      const query = lessQ ? {
-        query: {
-          has_child: {
-            type: "planCostShares", // Replace with the correct child type name
-            query: {
-              range: {
-                copay: {
-                  lt: fields.copay
-                },
-              },
-            },
-          },
-        },
-      }:{
-        query: {
-        has_child: {
-          type: "planCostShares", // Replace with the correct child type name
-          query: {
-            range: {
-              copay: {
-                gt: fields.copay
-              },
-            },
-          },
-        },
-      },
-
-      };
-     
-      const body = await esClient.search({
-        index: "plans", // Replace with your index name
-        body: query,
-      });
-      const allPlans: any =[] ;
-      body.hits.hits.forEach((element: any) => {
-        allPlans.push(element._source);
-      });
-    
-      const promises = allPlans.map((val: any)=>{
-        return( async() =>{
-          return await reconstructObject(val, redisClient, esClient);
-        })();
-      })
-      const  allPlansRestructured = await  Promise.all(promises);
-      return res.status(200).send(allPlansRestructured)
-     
-    } catch (error) {
-      console.error("Error fetching documents:", error);
-      res.status(500).send("Error fetching documents");
-    }
-  });
   app.get(
-    "/allParentsHaving",
+    "/allChildrenHavingCopayLessOrGreater",
     verifyHeaderToken,
     async (req, res) => {
       try {
         const fields = req.query;
-        const query = {
-          query: {
-            has_child: {
-              type: fields.type, // Replace with the correct child type name
+        let lessQ = false;
+        if (fields.lt === "true") {
+          console.log(fields);
+          lessQ = true;
+        }
+        const query = lessQ
+          ? {
               query: {
-                bool: {
-                  must: [] as any,
+                has_child: {
+                  type: "planCostShares", // Replace with the correct child type name
+                  query: {
+                    range: {
+                      copay: {
+                        lt: fields.copay,
+                      },
+                    },
+                  },
                 },
               },
-            },
-          },
-        };
+            }
+          : {
+              query: {
+                has_child: {
+                  type: "planCostShares", // Replace with the correct child type name
+                  query: {
+                    range: {
+                      copay: {
+                        gt: fields.copay,
+                      },
+                    },
+                  },
+                },
+              },
+            };
 
-        for (const [keys, vals] of Object.entries(fields)) {
-          if(keys === "type"){
-            continue;
-          }else{
-            query.query.has_child.query.bool.must.push({
-              match_phrase: { [keys]: vals },
-            });
-          }
-        }
         const body = await esClient.search({
           index: "plans", // Replace with your index name
           body: query,
         });
-        const totalNoOfPlans = body.hits.total.value;
-        const allPlans: any =[] ;
+        const allPlans: any = [];
         body.hits.hits.forEach((element: any) => {
           allPlans.push(element._source);
         });
-      
-        const promises = allPlans.map((val: any)=>{
-          return( async() =>{
+
+        const promises = allPlans.map((val: any) => {
+          return (async () => {
             return await reconstructObject(val, redisClient, esClient);
           })();
-        })
-        const  allPlansRestructured = await  Promise.all(promises);
-        // console.log(allPlansRestructured);
-        
-        // console.log(body.hits.total.value)
-        return res.status(200).send(allPlansRestructured)
+        });
+        const allPlansRestructured = await Promise.all(promises);
+        return res.status(200).send(allPlansRestructured);
       } catch (error) {
         console.error("Error fetching documents:", error);
         res.status(500).send("Error fetching documents");
       }
     },
   );
+  app.get("/allParentsHaving", verifyHeaderToken, async (req, res) => {
+    try {
+      const fields = req.query;
+      const query = {
+        query: {
+          has_child: {
+            type: fields.type, // Replace with the correct child type name
+            query: {
+              bool: {
+                must: [] as any,
+              },
+            },
+          },
+        },
+      };
+
+      for (const [keys, vals] of Object.entries(fields)) {
+        if (keys === "type") {
+          continue;
+        } else {
+          query.query.has_child.query.bool.must.push({
+            match_phrase: { [keys]: vals },
+          });
+        }
+      }
+      const body = await esClient.search({
+        index: "plans", // Replace with your index name
+        body: query,
+      });
+      const totalNoOfPlans = body.hits.total.value;
+      const allPlans: any = [];
+      body.hits.hits.forEach((element: any) => {
+        allPlans.push(element._source);
+      });
+
+      const promises = allPlans.map((val: any) => {
+        return (async () => {
+          return await reconstructObject(val, redisClient, esClient);
+        })();
+      });
+      const allPlansRestructured = await Promise.all(promises);
+      // console.log(allPlansRestructured);
+
+      // console.log(body.hits.total.value)
+      return res.status(200).send(allPlansRestructured);
+    } catch (error) {
+      console.error("Error fetching documents:", error);
+      res.status(500).send("Error fetching documents");
+    }
+  });
   app.get("/getMapping", verifyHeaderToken, async (_req, res) => {
     try {
       const response = await getMapping(esClient);

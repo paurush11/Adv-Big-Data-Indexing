@@ -317,37 +317,39 @@ const main = async () => {
         try {
             const fields = req.query;
             let lessQ = false;
-            if (fields.lt === 'true') {
+            if (fields.lt === "true") {
                 console.log(fields);
                 lessQ = true;
             }
-            const query = lessQ ? {
-                query: {
-                    has_child: {
-                        type: "planCostShares",
-                        query: {
-                            range: {
-                                copay: {
-                                    lt: fields.copay
+            const query = lessQ
+                ? {
+                    query: {
+                        has_child: {
+                            type: "planCostShares",
+                            query: {
+                                range: {
+                                    copay: {
+                                        lt: fields.copay,
+                                    },
                                 },
                             },
                         },
                     },
-                },
-            } : {
-                query: {
-                    has_child: {
-                        type: "planCostShares",
-                        query: {
-                            range: {
-                                copay: {
-                                    gt: fields.copay
+                }
+                : {
+                    query: {
+                        has_child: {
+                            type: "planCostShares",
+                            query: {
+                                range: {
+                                    copay: {
+                                        gt: fields.copay,
+                                    },
                                 },
                             },
                         },
                     },
-                },
-            };
+                };
             const body = await esClient.search({
                 index: "plans",
                 body: query,
