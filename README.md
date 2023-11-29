@@ -89,3 +89,14 @@ Why?
 
    
 > Run the runcommand in mainfx before anything
+
+
+
+Rabbit MQ is set up, now I will save the main object in esSearch, so when I do that then I will send the message to rabbit Mq server, and then try to see if the object is present in es search. As soon as I get the result, I will cancel the interval ( that was set up for every 200ms) and then generate the relationships.
+The type of message that is sent is stringified and then the type and message contains if its index or a update request.
+
+
+That concludes the end of this project.
+
+त्रिविधं नरकस्येदं द्वारं नाशनमात्मन: |
+काम: क्रोधस्तथा लोभस्तस्मादेतत्त्रयं त्यजेत् ||  
