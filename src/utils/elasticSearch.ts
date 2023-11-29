@@ -205,6 +205,28 @@ async function fetchAllDocuments(index: any, client: any) {
     console.error("Error fetching documents:", error);
   }
 }
+
+async function ObjectExists(objectId: string, esClient: any) {
+  try {
+    const result = await esClient.get({
+      index: "plans",
+      id: objectId,
+    });
+
+    console.log(result);
+    return result ? true : false;
+  } catch (error) {
+    // Check if the error is because the document was not found
+    if (error.meta && error.meta.statusCode === 404) {
+      console.log("haan yhan aa gaya");
+      return false;
+    } else {
+      // Log and rethrow other types of errors
+      console.error("Error checking if object exists:", error);
+      throw error;
+    }
+  }
+}
 async function fetchObjectById(
   objectId: string,
   redisClient: Redis,
@@ -279,6 +301,45 @@ const getMapping = async (client: any) => {
   }
 };
 
+async function deleteObject(
+  objectId: string,
+  redisClient: Redis,
+  esClient: any,
+) {
+  try {
+    const objectStr = await redisClient.get(objectId);
+    if (!objectStr) {
+      throw new Error(`Object with ID ${objectId} not found in Redis`);
+    }
+    const object = JSON.parse(objectStr);
+    for (const [key, value] of Object.entries(object)) {
+      if (typeof value === "object" && value !== null) {
+        if (Array.isArray(value)) {
+          // Value is an array of child objects
+          for (const child of value) {
+            await deleteObject(child.objectId, redisClient, esClient);
+          }
+        } else {
+          // Value is a single child object
+          await deleteObject((value as any).objectId, redisClient, esClient);
+        }
+      }
+    }
+    await redisClient.del(objectId);
+
+    // Delete the parent object from Elasticsearch
+    await esClient.delete({
+      index: "plans",
+      id: objectId,
+    });
+    console.log(
+      `Object with ID ${objectId} and its children deleted successfully.`,
+    );
+  } catch (err) {
+    console.log(err);
+  }
+}
+
 export {
   saveObject,
   saveObjectGenerate,
@@ -290,4 +351,6 @@ export {
   fetchObjectById,
   reconstructObject,
   getMapping,
+  ObjectExists,
+  deleteObject,
 };

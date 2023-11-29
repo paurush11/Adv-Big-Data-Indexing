@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getMapping = exports.reconstructObject = exports.fetchObjectById = exports.fetchAllDocuments = exports.deleteAllDocuments = exports.createElasticsearchMappings = exports.updateChildWithParent = exports.generateRelationships = exports.saveObjectGenerate = exports.saveObject = void 0;
+exports.deleteObject = exports.ObjectExists = exports.getMapping = exports.reconstructObject = exports.fetchObjectById = exports.fetchAllDocuments = exports.deleteAllDocuments = exports.createElasticsearchMappings = exports.updateChildWithParent = exports.generateRelationships = exports.saveObjectGenerate = exports.saveObject = void 0;
 const saveObject = async (objectID, planBody, redisClient) => {
     await redisClient.set(objectID, JSON.stringify(planBody), (err) => {
         if (err)
@@ -161,6 +161,27 @@ async function fetchAllDocuments(index, client) {
     }
 }
 exports.fetchAllDocuments = fetchAllDocuments;
+async function ObjectExists(objectId, esClient) {
+    try {
+        const result = await esClient.get({
+            index: "plans",
+            id: objectId,
+        });
+        console.log(result);
+        return result ? true : false;
+    }
+    catch (error) {
+        if (error.meta && error.meta.statusCode === 404) {
+            console.log("haan yhan aa gaya");
+            return false;
+        }
+        else {
+            console.error("Error checking if object exists:", error);
+            throw error;
+        }
+    }
+}
+exports.ObjectExists = ObjectExists;
 async function fetchObjectById(objectId, redisClient, esClient) {
     let object = await redisClient.get(objectId);
     if (!object) {
@@ -212,4 +233,35 @@ const getMapping = async (client) => {
     }
 };
 exports.getMapping = getMapping;
+async function deleteObject(objectId, redisClient, esClient) {
+    try {
+        const objectStr = await redisClient.get(objectId);
+        if (!objectStr) {
+            throw new Error(`Object with ID ${objectId} not found in Redis`);
+        }
+        const object = JSON.parse(objectStr);
+        for (const [key, value] of Object.entries(object)) {
+            if (typeof value === "object" && value !== null) {
+                if (Array.isArray(value)) {
+                    for (const child of value) {
+                        await deleteObject(child.objectId, redisClient, esClient);
+                    }
+                }
+                else {
+                    await deleteObject(value.objectId, redisClient, esClient);
+                }
+            }
+        }
+        await redisClient.del(objectId);
+        await esClient.delete({
+            index: "plans",
+            id: objectId,
+        });
+        console.log(`Object with ID ${objectId} and its children deleted successfully.`);
+    }
+    catch (err) {
+        console.log(err);
+    }
+}
+exports.deleteObject = deleteObject;
 //# sourceMappingURL=elasticSearch.js.map

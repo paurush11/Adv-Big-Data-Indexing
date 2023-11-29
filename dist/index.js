@@ -10,11 +10,12 @@ const dateValidator_1 = require("./utils/dateValidator");
 const elasticSearch_1 = require("./utils/elasticSearch");
 const jwtAuth_1 = require("./utils/jwtAuth");
 const modifyObject_1 = require("./utils/modifyObject");
+const rabbitMq_1 = require("./utils/rabbitMq");
 const fs = require("fs");
 const { Client } = require("@elastic/elasticsearch");
 const { Validator } = require("jsonschema");
 const main = async () => {
-    const runcommand = `export NODE_EXTRA_CA_CERTS="/Users/paurushbatish/Desktop/react/bigdataIndexingProject/cert/http_ca.crt"`;
+    const runcommand = `export NODE_EXTRA_CA_CERTS="/Users/paurushbatish/Desktop/ADVBIGDATA/elasticsearch-8.11.1/config/certs/http_ca.crt"`;
     const esClient = new Client({
         node: process.env.ES_NODE,
         auth: {
@@ -26,6 +27,7 @@ const main = async () => {
             rejectUnauthorized: true,
         },
     });
+    await (0, rabbitMq_1.receiveMessage)("requestQueue", esClient, rabbitMq_1.saveESItems);
     const resp = await esClient.info();
     const app = (0, express_1.default)();
     const redisClient = new ioredis_1.default();
@@ -117,13 +119,17 @@ const main = async () => {
         }
         const generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
         res.setHeader("ETag", generatedEtag);
-        await esClient.index({
-            index: "plans",
-            id: objectID,
-            body: fetchSavedObject,
-        });
-        await (0, elasticSearch_1.generateRelationships)(planBody, esClient);
-        return res.status(201).send("Object Successfully Saved");
+        await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "POST");
+        let found = false;
+        const interval = setInterval(async () => {
+            const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectId, esClient);
+            if (result) {
+                found = false;
+                clearInterval(interval);
+                await (0, elasticSearch_1.generateRelationships)(planBody, esClient);
+                return res.status(201).send("Object Successfully Saved");
+            }
+        }, 200);
     });
     app.get("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         const key = req.params.id;
@@ -134,7 +140,6 @@ const main = async () => {
         const clientEtag = req.header("If-None-Match");
         const mainObject = JSON.parse(obj);
         const reconstructedMainObject = await (0, elasticSearch_1.reconstructObject)(mainObject, redisClient, esClient);
-        console.log(mainObject);
         const generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(reconstructedMainObject));
         if (clientEtag && clientEtag === generatedEtag) {
             return res.status(304).send();
@@ -148,17 +153,14 @@ const main = async () => {
         if (!obj) {
             return res.status(404).send("No such Object Exists");
         }
-        return await redisClient.del(key, async (err, result) => {
-            if (err) {
-                return res.status(500).send("Error deleting plan.");
-            }
-            if (result === 1) {
+        try {
+            await (0, elasticSearch_1.deleteObject)(key, redisClient, esClient).then((result) => {
                 return res.status(200).send("Plan successfully deleted.");
-            }
-            else {
-                return res.status(404).send("Plan not found.");
-            }
-        });
+            });
+        }
+        catch (e) {
+            return res.status(500).send("Error deleting plan.");
+        }
     });
     app.put("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         try {
@@ -188,7 +190,6 @@ const main = async () => {
                     .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
             }
             const fetchSavedObject = await (0, elasticSearch_1.saveObjectGenerate)(planBody, redisClient, esClient);
-            console.log(fetchSavedObject);
             try {
                 (0, elasticSearch_1.saveObject)(key, fetchSavedObject, redisClient);
             }
@@ -198,15 +199,17 @@ const main = async () => {
             generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
             res.setHeader("ETag", generatedEtag);
             const statusCode = 200;
-            await esClient.update({
-                index: "plans",
-                id: key,
-                body: {
-                    doc: fetchSavedObject,
-                },
-            });
-            await (0, elasticSearch_1.generateRelationships)(planBody, esClient);
-            return res.status(statusCode).send(planBody);
+            await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PUT");
+            let found = false;
+            const interval = setInterval(async () => {
+                const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectId, esClient);
+                if (result) {
+                    found = false;
+                    clearInterval(interval);
+                    await (0, elasticSearch_1.generateRelationships)(planBody, esClient);
+                    return res.status(statusCode).send(planBody);
+                }
+            }, 2000);
         }
         catch (error) {
             return res.status(500).send("Internal Server Error");
@@ -250,7 +253,6 @@ const main = async () => {
                 return res.status(412).send("Precondition failed");
             }
             const fetchSavedObject = await (0, elasticSearch_1.saveObjectGenerate)(updatedObject, redisClient, esClient);
-            console.log(fetchSavedObject);
             try {
                 (0, elasticSearch_1.saveObject)(key, fetchSavedObject, redisClient);
             }
@@ -259,16 +261,18 @@ const main = async () => {
             }
             generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(updatedObject));
             res.setHeader("ETag", generatedEtag);
-            await esClient.update({
-                index: "plans",
-                id: key,
-                body: {
-                    doc: fetchSavedObject,
-                },
-            });
-            const reconstructedMainObject = await (0, elasticSearch_1.reconstructObject)(fetchSavedObject, redisClient, esClient);
-            await (0, elasticSearch_1.generateRelationships)(reconstructedMainObject, esClient);
-            return res.status(200).send(reconstructedMainObject);
+            await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PATCH");
+            let found = false;
+            const interval = setInterval(async () => {
+                const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectId, esClient);
+                if (result) {
+                    found = false;
+                    clearInterval(interval);
+                    const reconstructedMainObject = await (0, elasticSearch_1.reconstructObject)(fetchSavedObject, redisClient, esClient);
+                    await (0, elasticSearch_1.generateRelationships)(reconstructedMainObject, esClient);
+                    return res.status(200).send(reconstructedMainObject);
+                }
+            }, 2000);
         }
         catch (e) {
             return res.status(500).send("Internal Server Error");

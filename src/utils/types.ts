@@ -28,3 +28,9 @@ export interface mainObject {
   linkedPlanServices: linkedPlanService[];
   planCostShares: planCostShare;
 }
+
+export interface customResponseType {
+  status: number;
+  send: any;
+  Etag?: string;
+}
