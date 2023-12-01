@@ -43,6 +43,7 @@ const saveObjectGenerate = async (planBody, redisClient, esClient) => {
             savedObject[key] = value;
         }
     }
+    console.log(savedObject);
     return savedObject;
 };
 exports.saveObjectGenerate = saveObjectGenerate;
@@ -252,6 +253,7 @@ async function deleteObject(objectId, redisClient, esClient) {
                 }
             }
         }
+        console.log(objectId);
         await redisClient.del(objectId);
         await esClient.delete({
             index: "plans",

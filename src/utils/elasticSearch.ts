@@ -56,6 +56,7 @@ const saveObjectGenerate = async (
       savedObject[key] = value;
     }
   }
+  console.log(savedObject)
 
   return savedObject;
 };
@@ -317,6 +318,7 @@ async function deleteObject(
         if (Array.isArray(value)) {
           // Value is an array of child objects
           for (const child of value) {
+           
             await deleteObject(child.objectId, redisClient, esClient);
           }
         } else {
@@ -325,6 +327,7 @@ async function deleteObject(
         }
       }
     }
+    console.log(objectId);
     await redisClient.del(objectId);
 
     // Delete the parent object from Elasticsearch
