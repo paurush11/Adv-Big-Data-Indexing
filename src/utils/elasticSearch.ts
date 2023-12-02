@@ -56,7 +56,7 @@ const saveObjectGenerate = async (
       savedObject[key] = value;
     }
   }
-  console.log(savedObject)
+  console.log(savedObject);
 
   return savedObject;
 };
@@ -206,7 +206,6 @@ async function fetchAllDocuments(index: any, client: any) {
     console.error("Error fetching documents:", error);
   }
 }
-
 async function ObjectExists(objectId: string, esClient: any) {
   try {
     const result = await esClient.get({
@@ -301,7 +300,6 @@ const getMapping = async (client: any) => {
     console.error("Error getting mapping:", error);
   }
 };
-
 async function deleteObject(
   objectId: string,
   redisClient: Redis,
@@ -318,7 +316,6 @@ async function deleteObject(
         if (Array.isArray(value)) {
           // Value is an array of child objects
           for (const child of value) {
-           
             await deleteObject(child.objectId, redisClient, esClient);
           }
         } else {

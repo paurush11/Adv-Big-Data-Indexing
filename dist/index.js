@@ -16,6 +16,7 @@ const { Client } = require("@elastic/elasticsearch");
 const { Validator } = require("jsonschema");
 const main = async () => {
     const runcommand = `export NODE_EXTRA_CA_CERTS="/Users/paurushbatish/Desktop/ADVBIGDATA/elasticsearch-8.11.1/config/certs/http_ca.crt"`;
+    const runcommand2 = `export NODE_EXTRA_CA_CERTS="/Users/paurushbatish/Desktop/ESANDKIB/elasticsearch-8.10.1/config/certs/http_ca.crt"`;
     const esClient = new Client({
         node: process.env.ES_NODE,
         auth: {

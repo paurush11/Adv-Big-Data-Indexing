@@ -37,10 +37,10 @@ const getKey = (
   client.getSigningKey(
     header.kid,
     function (err: any, key: { publicKey: any; rsaPublicKey: any }) {
-      try{
+      try {
         const signingKey = key.publicKey || key.rsaPublicKey;
         callBack(null, signingKey);
-      }catch(e){
+      } catch (e) {
         callBack(null, "wrong");
       }
     },
