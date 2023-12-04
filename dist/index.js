@@ -111,30 +111,28 @@ const main = async () => {
                 .status(400)
                 .send("Invalid Date Object! Date not match the Schema provided. Make sure its DD-MM-YYYY format");
         }
-        const fetchSavedObject = await (0, elasticSearch_1.saveObjectGenerate)(planBody, redisClient, esClient);
         try {
-            (0, elasticSearch_1.saveObject)(fetchSavedObject.objectId, fetchSavedObject, redisClient);
+            const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(planBody, redisClient);
+            const generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
+            res.setHeader("ETag", generatedEtag);
+            await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "POST");
+            let found = false;
+            const interval = setInterval(async () => {
+                const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectType + '_' + fetchSavedObject.objectId, esClient);
+                if (result) {
+                    found = true;
+                    clearInterval(interval);
+                    return res.status(201).send("Object Successfully Saved");
+                }
+            }, 2);
         }
         catch (e) {
-            res.status(500).send("Error in saving value");
+            res.status(500).send("Error in saving object");
         }
-        const generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
-        res.setHeader("ETag", generatedEtag);
-        await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "POST");
-        let found = false;
-        const interval = setInterval(async () => {
-            const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectId, esClient);
-            if (result) {
-                found = false;
-                clearInterval(interval);
-                await (0, elasticSearch_1.generateRelationships)(planBody, esClient);
-                return res.status(201).send("Object Successfully Saved");
-            }
-        }, 200);
     });
     app.get("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         const key = req.params.id;
-        const obj = await redisClient.get(key);
+        const obj = await redisClient.get("plan_" + key);
         if (!obj) {
             return res.status(404).send("No such Object Exists");
         }
@@ -149,7 +147,7 @@ const main = async () => {
         return res.status(200).send(reconstructedMainObject);
     });
     app.delete("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
-        const key = req.params.id;
+        const key = 'plan_' + req.params.id;
         const obj = await redisClient.get(key);
         if (!obj) {
             return res.status(404).send("No such Object Exists");
@@ -190,9 +188,9 @@ const main = async () => {
                     .status(400)
                     .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
             }
-            const fetchSavedObject = await (0, elasticSearch_1.saveObjectGenerate)(planBody, redisClient, esClient);
+            const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(planBody, redisClient);
             try {
-                (0, elasticSearch_1.saveObject)(key, fetchSavedObject, redisClient);
+                (0, elasticSearch_1.saveObjectInRedis)(key, fetchSavedObject, redisClient);
             }
             catch (e) {
                 res.status(500).send("Error in saving value");
@@ -253,9 +251,9 @@ const main = async () => {
             if (clientEtag && clientEtag !== generatedEtag) {
                 return res.status(412).send("Precondition failed");
             }
-            const fetchSavedObject = await (0, elasticSearch_1.saveObjectGenerate)(updatedObject, redisClient, esClient);
+            const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(updatedObject, redisClient);
             try {
-                (0, elasticSearch_1.saveObject)(key, fetchSavedObject, redisClient);
+                (0, elasticSearch_1.saveObjectInRedis)(key, fetchSavedObject, redisClient);
             }
             catch (e) {
                 res.status(500).send("Error in saving value");

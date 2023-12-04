@@ -1,63 +1,39 @@
 import Redis from "ioredis";
 import { mainObject } from "./types";
 
-const saveObject = async (
+const saveObjectInRedis = async (
   objectID: string,
   planBody: any,
   redisClient: Redis,
 ) => {
-  // console.log(planBody)
   await redisClient.set(objectID, JSON.stringify(planBody), (err) => {
     if (err) throw Error(err.message);
   });
 };
-const saveObjectGenerate = async (
-  planBody: any,
-  redisClient: Redis,
-  esClient: any,
-) => {
+const saveObjectRecursive = async (planBody: any, redisClient: Redis) => {
   const savedObject = {} as any;
-
   for (const [key, value] of Object.entries(planBody)) {
     if (typeof value === "object" && value !== null) {
-      // console.log(key);
       if (Array.isArray(value)) {
         savedObject[key] = [];
-
         const promises = value.map((val) => {
           return (async () => {
-            saveObjectGenerate(val, redisClient, esClient);
-            await saveObject(val.objectId, val, redisClient);
-            await esClient.index({
-              index: "plans",
-              id: val.objectId,
-              body: val,
-            });
-            return { objectId: val.objectId };
+            saveObjectRecursive(val, redisClient);
+            await saveObjectInRedis((val as any).objectType + "_" + (val as any).objectId, val, redisClient);
+            return val;
           })();
         });
-
         savedObject[key] = await Promise.all(promises);
       } else {
-        ///key can only be planCostShares, linkedService, linkedService, planserviceCostShares
-
-        saveObjectGenerate(value, redisClient, esClient);
-        savedObject[key] = { objectId: (value as any).objectId };
-        ///Every Value has an objectId.
-        ///Save the Object in redis with id as value.objectId and value as value;
-        await saveObject((value as any).objectId, value, redisClient);
-        await esClient.index({
-          index: "plans",
-          id: (value as any).objectId,
-          body: value,
-        });
+        saveObjectRecursive(value, redisClient);
+        savedObject[key] = value;
+        await saveObjectInRedis((value as any).objectType + "_" + (value as any).objectId, value, redisClient);
       }
     } else {
       savedObject[key] = value;
     }
   }
-  console.log(savedObject);
-
+  await saveObjectInRedis((planBody as any).objectType + "_" + (planBody as any).objectId, planBody, redisClient);
   return savedObject;
 };
 const generateRelationships = async (mainObject: mainObject, esClient: any) => {
@@ -121,6 +97,7 @@ const generateRelationships = async (mainObject: mainObject, esClient: any) => {
     },
   });
 };
+//fit for generic purposes
 const updateChildWithParent = async (
   childId: string,
   parentId: string,
@@ -218,7 +195,6 @@ async function ObjectExists(objectId: string, esClient: any) {
   } catch (error) {
     // Check if the error is because the document was not found
     if (error.meta && error.meta.statusCode === 404) {
-      console.log("haan yhan aa gaya");
       return false;
     } else {
       // Log and rethrow other types of errors
@@ -251,7 +227,6 @@ async function reconstructObject(
   esClient: any,
 ) {
   const reconstructedObject = {} as any;
-
   for (const [key, value] of Object.entries(mainObject)) {
     if (typeof value === "object" && value !== null) {
       if (Array.isArray(value)) {
@@ -260,7 +235,7 @@ async function reconstructObject(
         for (const element of value) {
           if (element.objectId) {
             const fetchedObject = await fetchObjectById(
-              element.objectId,
+              element.objectType + '_'+ element.objectId,
               redisClient,
               esClient,
             );
@@ -270,7 +245,7 @@ async function reconstructObject(
       } else if ((value as any).objectId) {
         // If it's an object with an objectId, fetch the object
         reconstructedObject[key] = await fetchObjectById(
-          (value as any).objectId,
+          (value as any).objectType + '_'+ (value as any).objectId,
           redisClient,
           esClient,
         );
@@ -316,11 +291,11 @@ async function deleteObject(
         if (Array.isArray(value)) {
           // Value is an array of child objects
           for (const child of value) {
-            await deleteObject(child.objectId, redisClient, esClient);
+            await deleteObject(child.objectType + '_'+child.objectId, redisClient, esClient);
           }
         } else {
           // Value is a single child object
-          await deleteObject((value as any).objectId, redisClient, esClient);
+          await deleteObject((value as any).objectType + '_'+(value as any).objectId, redisClient, esClient);
         }
       }
     }
@@ -341,8 +316,8 @@ async function deleteObject(
 }
 
 export {
-  saveObject,
-  saveObjectGenerate,
+  saveObjectInRedis,
+  saveObjectRecursive,
   generateRelationships,
   updateChildWithParent,
   createElasticsearchMappings,

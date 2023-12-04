@@ -11,8 +11,8 @@ import {
   generateRelationships,
   getMapping,
   reconstructObject,
-  saveObject,
-  saveObjectGenerate,
+  saveObjectInRedis,
+  saveObjectRecursive
 } from "./utils/elasticSearch";
 import {
   fetchAccessToken,
@@ -37,7 +37,6 @@ const main = async () => {
     auth: {
       username: process.env.ES_USERNAME || "",
       password: process.env.ES_PASSWORD || "",
-      // apiKey: "bkNBZHk0c0JFd0x4WmUwbFdWQXk6VnBjcGVvMjJRUk9lTk54MkhrYUQzZw==",
     },
     ssl: {
       ca: fs.readFileSync("cert/http_ca.crt"),
@@ -158,39 +157,53 @@ const main = async () => {
     // Object of that Id exists
     // Object is Valid
     // Object can have many Properities
-    const fetchSavedObject = await saveObjectGenerate(
-      planBody,
-      redisClient,
-      esClient,
-    );
+    try{
+      const fetchSavedObject = await saveObjectRecursive(planBody, redisClient);
+      const generatedEtag = generateEtag(JSON.stringify(planBody));
+      res.setHeader("ETag", generatedEtag);
+  
+      ///RabbitMQ request
+      await sendESRequest(fetchSavedObject, "POST");
+
+      /// wait for response from ES Server to see if Object has been saved or not
+      let found = false;
+
+      const interval = setInterval(async ()=>{
+        const result = await ObjectExists(fetchSavedObject.objectType + '_' + fetchSavedObject.objectId, esClient);
+        if(result){
+          found = true;
+          clearInterval(interval);
+          // await generateRelationships(planBody, esClient);
+          return res.status(201).send("Object Successfully Saved");
+        }
+      }, 2)
+
+    }catch(e){
+      res.status(500).send("Error in saving object");
+    }
     // console.log(fetchSavedObject);
 
-    try {
-      saveObject(fetchSavedObject.objectId, fetchSavedObject, redisClient);
-      // saveObject(objectID, planBody, redisClient);
-    } catch (e) {
-      res.status(500).send("Error in saving value");
-    }
+    // try {
+    //   saveObjectInRedis(fetchSavedObject.objectId, fetchSavedObject, redisClient);
+    //   // saveObject(objectID, planBody, redisClient);
+    // } catch (e) {
+     
+    // }
 
     /// etag is saved on plan body so that it can be verified before saving anything in patch and put request
-    const generatedEtag = generateEtag(JSON.stringify(planBody));
-    res.setHeader("ETag", generatedEtag);
-
-    ///RabbitMQ request
-
-    await sendESRequest(fetchSavedObject, "POST");
+  
     /// set Interval for
-    let found = false;
-    const interval = setInterval(async () => {
-      const result = await ObjectExists(fetchSavedObject.objectId, esClient);
+    // let found = false;
+    // const interval = setInterval(async () => {
+    //   const result = await ObjectExists(fetchSavedObject.objectId, esClient);
 
-      if (result) {
-        found = false;
-        clearInterval(interval);
-        await generateRelationships(planBody, esClient);
-        return res.status(201).send("Object Successfully Saved");
-      }
-    }, 200);
+    //   if (result) {
+    //     found = false;
+    //     clearInterval(interval);
+    //     await generateRelationships(planBody, esClient);
+    //     return res.status(201).send("Object Successfully Saved");
+    //   }
+    // }, 200);
 
     // await esClient.index({
     //   index: "plans",
@@ -204,7 +217,7 @@ const main = async () => {
   });
   app.get("/plan/:id", verifyHeaderToken, async (req, res) => {
     const key = req.params.id;
-    const obj = await redisClient.get(key as string);
+    const obj = await redisClient.get("plan_"+ key as string);
 
     if (!obj) {
       return res.status(404).send("No such Object Exists");
@@ -226,9 +239,8 @@ const main = async () => {
     return res.status(200).send(reconstructedMainObject);
   });
   app.delete("/plan/:id", verifyHeaderToken, async (req, res) => {
-    const key = req.params.id;
+    const key = 'plan_'+ req.params.id;
     const obj = await redisClient.get(key);
-
     if (!obj) {
       return res.status(404).send("No such Object Exists");
     }
@@ -239,21 +251,6 @@ const main = async () => {
     } catch (e) {
       return res.status(500).send("Error deleting plan.");
     }
-
-    // return await redisClient.del(key, async (err, result) => {
-    //   if (err) {
-    //     return res.status(500).send("Error deleting plan.");
-    //   }
-    //   if (result === 1) {
-    //     // await esClient.delete({
-    //     //   index: "plans",
-    //     //   id: key,
-    //     // });
-    //     return res.status(200).send("Plan successfully deleted.");
-    //   } else {
-    //     return res.status(404).send("Plan not found.");
-    //   }
-    // });
   });
   app.put("/plan/:id", verifyHeaderToken, async (req, res) => {
     try {
@@ -295,14 +292,10 @@ const main = async () => {
       ///now it means that object is valid and fully safe to save.
       ///break down the object and make the desired changes
 
-      const fetchSavedObject = await saveObjectGenerate(
-        planBody,
-        redisClient,
-        esClient,
-      );
+      const fetchSavedObject = await saveObjectRecursive(planBody, redisClient);
 
       try {
-        saveObject(key, fetchSavedObject, redisClient);
+        saveObjectInRedis(key, fetchSavedObject, redisClient);
         // saveObject(objectID, planBody, redisClient);
       } catch (e) {
         res.status(500).send("Error in saving value");
@@ -385,14 +378,13 @@ const main = async () => {
       }
 
       /// We have made our new object and now also modified it. Now all we need to do is to save it just like the put request.
-      const fetchSavedObject = await saveObjectGenerate(
+      const fetchSavedObject = await saveObjectRecursive(
         updatedObject,
         redisClient,
-        esClient,
       );
 
       try {
-        saveObject(key, fetchSavedObject, redisClient);
+        saveObjectInRedis(key, fetchSavedObject, redisClient);
         // saveObject(objectID, planBody, redisClient);
       } catch (e) {
         res.status(500).send("Error in saving value");
