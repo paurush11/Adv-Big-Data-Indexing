@@ -8,11 +8,11 @@ import {
   deleteAllDocuments,
   deleteObject,
   fetchAllDocuments,
-  generateRelationships,
+  generateRelationshipsStart,
   getMapping,
   reconstructObject,
   saveObjectInRedis,
-  saveObjectRecursive
+  saveObjectRecursive,
 } from "./utils/elasticSearch";
 import {
   fetchAccessToken,
@@ -26,7 +26,31 @@ import { mainObject } from "./utils/types";
 const fs = require("fs");
 const { Client } = require("@elastic/elasticsearch");
 const { Validator } = require("jsonschema");
-
+const checkIfObjectExistsNow = async (
+  fetchSavedObject: any,
+  esClient: any,
+  planBody: any,
+  res: any,
+  statusCode:any
+) => {
+  const result = await ObjectExists(
+    fetchSavedObject.objectType + "_" + fetchSavedObject.objectId,
+    esClient,
+  );
+  console.log("Checking if object exists...");
+  if (result) {
+    console.log("Object found:", result);
+    console.log("Continuing with relationship generation...");
+    await generateRelationshipsStart(planBody, esClient);
+    return res.status(statusCode).send("Object Successfully Saved");
+  } else {
+    console.log("Object not found, retrying...");
+    setTimeout(
+      () => checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, statusCode),
+      200,
+    );
+  }
+};
 const main = async () => {
   // const rabbitMq = await rabbitMqConnection();
   // console.log(rabbitMq.connection)
@@ -128,10 +152,12 @@ const main = async () => {
         .status(400)
         .send("Invalid Object! Does not match the Schema provided");
     /// Now check if the Object Exists already
-    const obj = await redisClient.exists(objectID);
+    const obj = await redisClient.exists(planBody.objectType + "_" + objectID);
 
     if (obj) {
-      const objectInPlan = await redisClient.get(objectID);
+      const objectInPlan = await redisClient.get(
+        planBody.objectType + "_" + objectID,
+      );
       return res.status(409).send("Object Already Exists!!!" + objectInPlan);
     }
 
@@ -157,67 +183,24 @@ const main = async () => {
     // Object of that Id exists
     // Object is Valid
     // Object can have many Properities
-    try{
+
+    try {
       const fetchSavedObject = await saveObjectRecursive(planBody, redisClient);
       const generatedEtag = generateEtag(JSON.stringify(planBody));
       res.setHeader("ETag", generatedEtag);
-  
+
       ///RabbitMQ request
       await sendESRequest(fetchSavedObject, "POST");
-
+      await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, 201);
       /// wait for response from ES Server to see if Object has been saved or not
-      let found = false;
-
-      const interval = setInterval(async ()=>{
-        const result = await ObjectExists(fetchSavedObject.objectType + '_' + fetchSavedObject.objectId, esClient);
-        if(result){
-          found = true;
-          clearInterval(interval);
-          // await generateRelationships(planBody, esClient);
-          return res.status(201).send("Object Successfully Saved");
-        }
-      }, 2)
-
-    }catch(e){
+    } catch (e) {
+      console.log(e);
       res.status(500).send("Error in saving object");
     }
-    // console.log(fetchSavedObject);
-
-    // try {
-    //   saveObjectInRedis(fetchSavedObject.objectId, fetchSavedObject, redisClient);
-    //   // saveObject(objectID, planBody, redisClient);
-    // } catch (e) {
-     
-    // }
-
-    /// etag is saved on plan body so that it can be verified before saving anything in patch and put request
-  
-    /// set Interval for
-    // let found = false;
-    // const interval = setInterval(async () => {
-    //   const result = await ObjectExists(fetchSavedObject.objectId, esClient);
-
-    //   if (result) {
-    //     found = false;
-    //     clearInterval(interval);
-    //     await generateRelationships(planBody, esClient);
-    //     return res.status(201).send("Object Successfully Saved");
-    //   }
-    // }, 200);
-
-    // await esClient.index({
-    //   index: "plans",
-    //   id: objectID,
-    //   body: fetchSavedObject, // savedObject contains references to child objects
-    // });
-
-    // await generateRelationships(planBody, esClient);
-
-    // return res.status(201).send("Object Successfully Saved");
   });
   app.get("/plan/:id", verifyHeaderToken, async (req, res) => {
     const key = req.params.id;
-    const obj = await redisClient.get("plan_"+ key as string);
+    const obj = await redisClient.get(("plan_" + key) as string);
 
     if (!obj) {
       return res.status(404).send("No such Object Exists");
@@ -239,7 +222,7 @@ const main = async () => {
     return res.status(200).send(reconstructedMainObject);
   });
   app.delete("/plan/:id", verifyHeaderToken, async (req, res) => {
-    const key = 'plan_'+ req.params.id;
+    const key = "plan_" + req.params.id;
     const obj = await redisClient.get(key);
     if (!obj) {
       return res.status(404).send("No such Object Exists");
@@ -261,7 +244,7 @@ const main = async () => {
       const key = req.params.id;
       const planBody = req.body;
 
-      const obj = await redisClient.get(key);
+      const obj = await redisClient.get("plan_"+key);
       if (!obj) return res.status(404).send("No such Object Exists");
       ///verify the etag on reconstructed obj
       const reconstructedOldObject = await reconstructObject(
@@ -276,6 +259,8 @@ const main = async () => {
       if (clientEtag && clientEtag !== generatedEtag) {
         return res.status(412).send("Precondition failed");
       }
+
+      ///new object
       const validator = new Validator();
       const result = validator.validate(planBody, JSON.parse(schema as string));
       if (!result.valid)
@@ -291,9 +276,7 @@ const main = async () => {
       ///object validated
       ///now it means that object is valid and fully safe to save.
       ///break down the object and make the desired changes
-
       const fetchSavedObject = await saveObjectRecursive(planBody, redisClient);
-
       try {
         saveObjectInRedis(key, fetchSavedObject, redisClient);
         // saveObject(objectID, planBody, redisClient);
@@ -303,21 +286,9 @@ const main = async () => {
       ///New Etag
       generatedEtag = generateEtag(JSON.stringify(planBody));
       res.setHeader("ETag", generatedEtag);
-      const statusCode = 200;
-
       await sendESRequest(fetchSavedObject, "PUT");
-      /// set Interval for
-      let found = false;
-      const interval = setInterval(async () => {
-        const result = await ObjectExists(fetchSavedObject.objectId, esClient);
-
-        if (result) {
-          found = false;
-          clearInterval(interval);
-          await generateRelationships(planBody, esClient);
-          return res.status(statusCode).send(planBody);
-        }
-      }, 2000);
+      await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, 200);
+     
     } catch (error) {
       return res.status(500).send("Internal Server Error");
     }
@@ -331,7 +302,7 @@ const main = async () => {
       const key = req.params.id;
       const updatedBody = req.body;
 
-      const obj = await redisClient.get(key);
+      const obj = await redisClient.get("plan_"+key);
       if (!obj) {
         return res.status(404).send("No such object found");
       }
@@ -408,7 +379,7 @@ const main = async () => {
             redisClient,
             esClient,
           );
-          await generateRelationships(reconstructedMainObject, esClient);
+          await generateRelationshipsStart(reconstructedMainObject, esClient);
           return res.status(200).send(reconstructedMainObject);
         }
       }, 2000);

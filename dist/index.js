@@ -14,6 +14,20 @@ const rabbitMq_1 = require("./utils/rabbitMq");
 const fs = require("fs");
 const { Client } = require("@elastic/elasticsearch");
 const { Validator } = require("jsonschema");
+const checkIfObjectExistsNow = async (fetchSavedObject, esClient, planBody, res, statusCode) => {
+    const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectType + "_" + fetchSavedObject.objectId, esClient);
+    console.log("Checking if object exists...");
+    if (result) {
+        console.log("Object found:", result);
+        console.log("Continuing with relationship generation...");
+        await (0, elasticSearch_1.generateRelationshipsStart)(planBody, esClient);
+        return res.status(statusCode).send("Object Successfully Saved");
+    }
+    else {
+        console.log("Object not found, retrying...");
+        setTimeout(() => checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, statusCode), 200);
+    }
+};
 const main = async () => {
     const runcommand = `export NODE_EXTRA_CA_CERTS="/Users/paurushbatish/Desktop/ADVBIGDATA/elasticsearch-8.11.1/config/certs/http_ca.crt"`;
     const runcommand2 = `export NODE_EXTRA_CA_CERTS="/Users/paurushbatish/Desktop/ESANDKIB/elasticsearch-8.10.1/config/certs/http_ca.crt"`;
@@ -94,9 +108,9 @@ const main = async () => {
             return res
                 .status(400)
                 .send("Invalid Object! Does not match the Schema provided");
-        const obj = await redisClient.exists(objectID);
+        const obj = await redisClient.exists(planBody.objectType + "_" + objectID);
         if (obj) {
-            const objectInPlan = await redisClient.get(objectID);
+            const objectInPlan = await redisClient.get(planBody.objectType + "_" + objectID);
             return res.status(409).send("Object Already Exists!!!" + objectInPlan);
         }
         const validator = new Validator();
@@ -116,23 +130,16 @@ const main = async () => {
             const generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
             res.setHeader("ETag", generatedEtag);
             await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "POST");
-            let found = false;
-            const interval = setInterval(async () => {
-                const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectType + '_' + fetchSavedObject.objectId, esClient);
-                if (result) {
-                    found = true;
-                    clearInterval(interval);
-                    return res.status(201).send("Object Successfully Saved");
-                }
-            }, 2);
+            await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, 201);
         }
         catch (e) {
+            console.log(e);
             res.status(500).send("Error in saving object");
         }
     });
     app.get("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         const key = req.params.id;
-        const obj = await redisClient.get("plan_" + key);
+        const obj = await redisClient.get(("plan_" + key));
         if (!obj) {
             return res.status(404).send("No such Object Exists");
         }
@@ -147,7 +154,7 @@ const main = async () => {
         return res.status(200).send(reconstructedMainObject);
     });
     app.delete("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
-        const key = 'plan_' + req.params.id;
+        const key = "plan_" + req.params.id;
         const obj = await redisClient.get(key);
         if (!obj) {
             return res.status(404).send("No such Object Exists");
@@ -168,7 +175,7 @@ const main = async () => {
                 return res.status(404).send("No Schema Found! Add a Schema first");
             const key = req.params.id;
             const planBody = req.body;
-            const obj = await redisClient.get(key);
+            const obj = await redisClient.get("plan_" + key);
             if (!obj)
                 return res.status(404).send("No such Object Exists");
             const reconstructedOldObject = await (0, elasticSearch_1.reconstructObject)(JSON.parse(obj), redisClient, esClient);
@@ -197,18 +204,8 @@ const main = async () => {
             }
             generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
             res.setHeader("ETag", generatedEtag);
-            const statusCode = 200;
             await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PUT");
-            let found = false;
-            const interval = setInterval(async () => {
-                const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectId, esClient);
-                if (result) {
-                    found = false;
-                    clearInterval(interval);
-                    await (0, elasticSearch_1.generateRelationships)(planBody, esClient);
-                    return res.status(statusCode).send(planBody);
-                }
-            }, 2000);
+            await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, 200);
         }
         catch (error) {
             return res.status(500).send("Internal Server Error");
@@ -221,7 +218,7 @@ const main = async () => {
                 return res.status(404).send("No Schema Found! Add a Schema first");
             const key = req.params.id;
             const updatedBody = req.body;
-            const obj = await redisClient.get(key);
+            const obj = await redisClient.get("plan_" + key);
             if (!obj) {
                 return res.status(404).send("No such object found");
             }
@@ -268,7 +265,7 @@ const main = async () => {
                     found = false;
                     clearInterval(interval);
                     const reconstructedMainObject = await (0, elasticSearch_1.reconstructObject)(fetchSavedObject, redisClient, esClient);
-                    await (0, elasticSearch_1.generateRelationships)(reconstructedMainObject, esClient);
+                    await (0, elasticSearch_1.generateRelationshipsStart)(reconstructedMainObject, esClient);
                     return res.status(200).send(reconstructedMainObject);
                 }
             }, 2000);

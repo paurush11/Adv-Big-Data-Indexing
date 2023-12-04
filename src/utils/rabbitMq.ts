@@ -19,7 +19,6 @@ const rabbitMqConnection = async () => {
   const connection = await amqp.connect(process.env.RABBITMQ_URL || "");
   const channel = await connection.createChannel();
   const requestQueue = "requestQueue";
-
   return {
     connection,
     channel,
@@ -36,64 +35,70 @@ const sendMessage = async (message: string) => {
   const { connection, channel, requestQueue } = await rabbitMqConnection();
   await channel.assertQueue(requestQueue, { durable: false });
   console.log("message Sent");
-
   channel.sendToQueue(requestQueue, Buffer.from(message));
-
   setTimeout(() => {
     connection.close();
   }, 500);
 };
-const saveObjectInES = async (esClient: any, value: any) =>{
+const saveObjectInES = async (esClient: any, value: any) => {
   await esClient.index({
     index: "plans",
-    id: value.objectType +'_'+value.objectId,
-    body: value
+    id: value.objectType + "_" + value.objectId,
+    body: value,
   });
-}
-const saveESRecursive = async( healthMessageJSON:any,esClient: any)=>{
-  console.log(healthMessageJSON)
+};
+const updateObjectInES = async (esClient: any, value: any) => {
+  await esClient.index({
+    index: "plans",
+    id: value.objectType + "_" + value.objectId,
+    body: {
+      doc: value,
+    },
+  });
+};
+const saveESRecursive = async (healthMessageJSON: any, esClient: any, type: string) => {
   const savedObject = {} as any;
-  for(const [key, value] of Object.entries(healthMessageJSON)){
-    if(typeof value === "object" && value !== null){
-      if(Array.isArray(value)){
+  for (const [key, value] of Object.entries(healthMessageJSON)) {
+    if (typeof value === "object" && value !== null) {
+      if (Array.isArray(value)) {
         savedObject[key] = [];
-        const promises = value.map((val)=>{
-          return ( async ()=>{
-            saveESRecursive(val, esClient);
-            await saveObjectInES(esClient, val);
+        const promises = value.map((val) => {
+          return (async () => {
+            saveESRecursive(val, esClient, type);
+            if(type === "insert"){
+              await saveObjectInES(esClient, val);
+            }else{
+              await updateObjectInES(esClient, val);
+            }
             return val;
           })();
-        })
+        });
         savedObject[key] = await Promise.all(promises);
-      }else{
-        saveESRecursive(value, esClient);
+      } else {
+        saveESRecursive(value, esClient, type);
         savedObject[key] = healthMessageJSON;
-        await saveObjectInES(esClient, value);
+        if(type === "insert"){
+          await saveObjectInES(esClient, value);
+        }else{
+          await updateObjectInES(esClient, value);
+        }
       }
-    }else{
+    } else {
       savedObject.key = value;
     }
   }
-  await saveObjectInES(esClient, healthMessageJSON);
+  if(type === "insert"){
+    await saveObjectInES(esClient, healthMessageJSON);
+  }else{
+    await updateObjectInES(esClient, healthMessageJSON);
+  }
   return savedObject;
-
-}
+};
 const saveESItems = async (msg: string, esClient: any) => {
   try {
     const message = JSON.parse(msg);
-    console.log("This is the recieved message");
     const type = message.type;
-    if (type === "insert") {
-      await saveESRecursive(message.body, esClient);
-    } else {
-      return await esClient.update({
-        index: "plans",
-        id: message.id,
-        body: {
-          doc: message.body,
-        },
-      });
-    }
+    await saveESRecursive(message.body, esClient, type);
   } catch (e) {
     console.error(e);
     return "not Done";
@@ -102,13 +107,12 @@ const saveESItems = async (msg: string, esClient: any) => {
 const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
   const { connection, channel } = await rabbitMqConnection();
   await channel.assertQueue(queue, { durable: false });
-  console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
+  console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue)
   channel.consume(
     queue,
     (msg) => {
       if (msg) {
         const message = JSON.parse(msg.content.toString());
-
         const newMessage = {
           index: "plans",
           id: message.doc.objectId,

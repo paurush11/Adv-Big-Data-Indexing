@@ -19,7 +19,11 @@ const saveObjectRecursive = async (planBody: any, redisClient: Redis) => {
         const promises = value.map((val) => {
           return (async () => {
             saveObjectRecursive(val, redisClient);
-            await saveObjectInRedis((val as any).objectType + "_" + (val as any).objectId, val, redisClient);
+            await saveObjectInRedis(
+              (val as any).objectType + "_" + (val as any).objectId,
+              val,
+              redisClient,
+            );
             return val;
           })();
         });
@@ -27,67 +31,27 @@ const saveObjectRecursive = async (planBody: any, redisClient: Redis) => {
       } else {
         saveObjectRecursive(value, redisClient);
         savedObject[key] = value;
-        await saveObjectInRedis((value as any).objectType + "_" + (value as any).objectId, value, redisClient);
+        await saveObjectInRedis(
+          (value as any).objectType + "_" + (value as any).objectId,
+          value,
+          redisClient,
+        );
       }
     } else {
       savedObject[key] = value;
     }
   }
-  await saveObjectInRedis((planBody as any).objectType + "_" + (planBody as any).objectId, planBody, redisClient);
+  await saveObjectInRedis(
+    (planBody as any).objectType + "_" + (planBody as any).objectId,
+    planBody,
+    redisClient,
+  );
   return savedObject;
 };
-const generateRelationships = async (mainObject: mainObject, esClient: any) => {
-  //planCostShares
-  if (mainObject.planCostShares && mainObject.planCostShares.objectId) {
-    ///save this
-    await updateChildWithParent(
-      mainObject.planCostShares.objectId,
-      mainObject.objectId,
-      esClient,
-      "planCostShares",
-    );
-  }
-  ///linkedPlanServices
-  if (
-    mainObject.linkedPlanServices &&
-    Array.isArray(mainObject.linkedPlanServices)
-  ) {
-    for (const service of mainObject.linkedPlanServices) {
-      if (service.objectId) {
-        ///service should have linkedservice and planservicecostshares
-        if (service.linkedService && service.linkedService.objectId) {
-          await updateChildWithParent(
-            service.linkedService.objectId,
-            service.objectId,
-            esClient,
-            "linkedService",
-          );
-        }
-        if (
-          service.planserviceCostShares &&
-          service.planserviceCostShares.objectId
-        ) {
-          await updateChildWithParent(
-            service.planserviceCostShares.objectId,
-            service.objectId,
-            esClient,
-            "planserviceCostShares",
-          );
-        }
-
-        await updateChildWithParent(
-          service.objectId,
-          mainObject.objectId,
-          esClient,
-          "linkedPlanServices",
-        );
-        //save this
-      }
-    }
-  }
+const generateRelationshipsStart = async (mainObject: any, esClient: any) => {
   await esClient.update({
     index: "plans",
-    id: mainObject.objectId,
+    id: mainObject.objectType + "_" + mainObject.objectId,
     body: {
       doc: {
         relationship: { name: "plan" },
@@ -96,6 +60,36 @@ const generateRelationships = async (mainObject: mainObject, esClient: any) => {
       // ... mainObject fields ...
     },
   });
+  await generateRelationshipsRecursive(mainObject, esClient);
+};
+const generateRelationshipsRecursive = async (
+  mainObject: any,
+  esClient: any,
+) => {
+  //planCostShares
+  for (const [keys, value] of Object.entries(mainObject)) {
+    if (typeof value === "object" && value !== null) {
+      if (Array.isArray(value)) {
+        for (const service of value) {
+          await generateRelationshipsRecursive(service, esClient);
+          await updateChildWithParent(
+            (service as any).objectType + "_" + (service as any).objectId, //<- child object id
+            mainObject.objectType + "_" + mainObject.objectId, //<-- parent object id
+            esClient,
+            mainObject.objectType + "_" + (service as any).objectType,
+          );
+        }
+      } else {
+        await generateRelationshipsRecursive(value, esClient);
+        await updateChildWithParent(
+          (value as any).objectType + "_" + (value as any).objectId, //<- child object id
+          mainObject.objectType + "_" + mainObject.objectId, //<-- parent object id
+          esClient,
+          mainObject.objectType + "_" + (value as any).objectType,
+        );
+      }
+    }
+  }
 };
 //fit for generic purposes
 const updateChildWithParent = async (
@@ -105,6 +99,25 @@ const updateChildWithParent = async (
   planType: string,
 ) => {
   try {
+    // console.log(
+    //   JSON.stringify(
+    //     {
+    //       index: "plans",
+    //       id: childId,
+    //       routing: parentId,
+    //       body: {
+    //         doc: {
+    //           relationship: {
+    //             name: planType,
+    //             parent: parentId,
+    //           },
+    //         },
+    //       },
+    //     },
+    //     null,
+    //     2,
+    //   ),
+    // );
     await esClient.update({
       index: "plans",
       id: childId,
@@ -130,8 +143,11 @@ const createElasticsearchMappings = async (esClient: any) => {
         relationship: {
           type: "join",
           relations: {
-            plan: ["planCostShares", "linkedPlanServices"],
-            linkedPlanService: ["linkedService", "planserviceCostShares"],
+            plan: ["plan_membercostshare", "plan_planservice"],
+            plan_planservice: [
+              "planservice_membercostshare",
+              "planservice_service",
+            ],
           },
         },
         // ... additional field mappings based on your data structure ...
@@ -189,8 +205,6 @@ async function ObjectExists(objectId: string, esClient: any) {
       index: "plans",
       id: objectId,
     });
-
-    console.log(result);
     return result ? true : false;
   } catch (error) {
     // Check if the error is because the document was not found
@@ -235,7 +249,7 @@ async function reconstructObject(
         for (const element of value) {
           if (element.objectId) {
             const fetchedObject = await fetchObjectById(
-              element.objectType + '_'+ element.objectId,
+              element.objectType + "_" + element.objectId,
               redisClient,
               esClient,
             );
@@ -245,7 +259,7 @@ async function reconstructObject(
       } else if ((value as any).objectId) {
         // If it's an object with an objectId, fetch the object
         reconstructedObject[key] = await fetchObjectById(
-          (value as any).objectType + '_'+ (value as any).objectId,
+          (value as any).objectType + "_" + (value as any).objectId,
           redisClient,
           esClient,
         );
@@ -291,11 +305,19 @@ async function deleteObject(
         if (Array.isArray(value)) {
           // Value is an array of child objects
           for (const child of value) {
-            await deleteObject(child.objectType + '_'+child.objectId, redisClient, esClient);
+            await deleteObject(
+              child.objectType + "_" + child.objectId,
+              redisClient,
+              esClient,
+            );
           }
         } else {
           // Value is a single child object
-          await deleteObject((value as any).objectType + '_'+(value as any).objectId, redisClient, esClient);
+          await deleteObject(
+            (value as any).objectType + "_" + (value as any).objectId,
+            redisClient,
+            esClient,
+          );
         }
       }
     }
@@ -318,7 +340,8 @@ async function deleteObject(
 export {
   saveObjectInRedis,
   saveObjectRecursive,
-  generateRelationships,
+  generateRelationshipsStart,
+  generateRelationshipsRecursive,
   updateChildWithParent,
   createElasticsearchMappings,
   deleteAllDocuments,

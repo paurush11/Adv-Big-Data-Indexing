@@ -73,12 +73,20 @@ exports.sendMessage = sendMessage;
 const saveObjectInES = async (esClient, value) => {
     await esClient.index({
         index: "plans",
-        id: value.objectType + '_' + value.objectId,
-        body: value
+        id: value.objectType + "_" + value.objectId,
+        body: value,
     });
 };
-const saveESRecursive = async (healthMessageJSON, esClient) => {
-    console.log(healthMessageJSON);
+const updateObjectInES = async (esClient, value) => {
+    await esClient.index({
+        index: "plans",
+        id: value.objectType + "_" + value.objectId,
+        body: {
+            doc: value,
+        },
+    });
+};
+const saveESRecursive = async (healthMessageJSON, esClient, type) => {
     const savedObject = {};
     for (const [key, value] of Object.entries(healthMessageJSON)) {
         if (typeof value === "object" && value !== null) {
@@ -86,43 +94,46 @@ const saveESRecursive = async (healthMessageJSON, esClient) => {
                 savedObject[key] = [];
                 const promises = value.map((val) => {
                     return (async () => {
-                        saveESRecursive(val, esClient);
-                        await saveObjectInES(esClient, val);
+                        saveESRecursive(val, esClient, type);
+                        if (type === "insert") {
+                            await saveObjectInES(esClient, val);
+                        }
+                        else {
+                            await updateObjectInES(esClient, val);
+                        }
                         return val;
                     })();
                 });
                 savedObject[key] = await Promise.all(promises);
             }
             else {
-                saveESRecursive(value, esClient);
+                saveESRecursive(value, esClient, type);
                 savedObject[key] = healthMessageJSON;
-                await saveObjectInES(esClient, value);
+                if (type === "insert") {
+                    await saveObjectInES(esClient, value);
+                }
+                else {
+                    await updateObjectInES(esClient, value);
+                }
             }
         }
         else {
             savedObject.key = value;
         }
     }
-    await saveObjectInES(esClient, healthMessageJSON);
+    if (type === "insert") {
+        await saveObjectInES(esClient, healthMessageJSON);
+    }
+    else {
+        await updateObjectInES(esClient, healthMessageJSON);
+    }
     return savedObject;
 };
 const saveESItems = async (msg, esClient) => {
     try {
         const message = JSON.parse(msg);
-        console.log("This is the recieved message");
         const type = message.type;
-        if (type === "insert") {
-            await saveESRecursive(message.body, esClient);
-        }
-        else {
-            return await esClient.update({
-                index: "plans",
-                id: message.id,
-                body: {
-                    doc: message.body,
-                },
-            });
-        }
+        await saveESRecursive(message.body, esClient, type);
     }
     catch (e) {
         console.error(e);

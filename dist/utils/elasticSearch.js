@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteObject = exports.ObjectExists = exports.getMapping = exports.reconstructObject = exports.fetchObjectById = exports.fetchAllDocuments = exports.deleteAllDocuments = exports.createElasticsearchMappings = exports.updateChildWithParent = exports.generateRelationships = exports.saveObjectRecursive = exports.saveObjectInRedis = void 0;
+exports.deleteObject = exports.ObjectExists = exports.getMapping = exports.reconstructObject = exports.fetchObjectById = exports.fetchAllDocuments = exports.deleteAllDocuments = exports.createElasticsearchMappings = exports.updateChildWithParent = exports.generateRelationshipsRecursive = exports.generateRelationshipsStart = exports.saveObjectRecursive = exports.saveObjectInRedis = void 0;
 const saveObjectInRedis = async (objectID, planBody, redisClient) => {
     await redisClient.set(objectID, JSON.stringify(planBody), (err) => {
         if (err)
@@ -37,36 +37,36 @@ const saveObjectRecursive = async (planBody, redisClient) => {
     return savedObject;
 };
 exports.saveObjectRecursive = saveObjectRecursive;
-const generateRelationships = async (mainObject, esClient) => {
-    if (mainObject.planCostShares && mainObject.planCostShares.objectId) {
-        await updateChildWithParent(mainObject.planCostShares.objectId, mainObject.objectId, esClient, "planCostShares");
-    }
-    if (mainObject.linkedPlanServices &&
-        Array.isArray(mainObject.linkedPlanServices)) {
-        for (const service of mainObject.linkedPlanServices) {
-            if (service.objectId) {
-                if (service.linkedService && service.linkedService.objectId) {
-                    await updateChildWithParent(service.linkedService.objectId, service.objectId, esClient, "linkedService");
-                }
-                if (service.planserviceCostShares &&
-                    service.planserviceCostShares.objectId) {
-                    await updateChildWithParent(service.planserviceCostShares.objectId, service.objectId, esClient, "planserviceCostShares");
-                }
-                await updateChildWithParent(service.objectId, mainObject.objectId, esClient, "linkedPlanServices");
-            }
-        }
-    }
+const generateRelationshipsStart = async (mainObject, esClient) => {
     await esClient.update({
         index: "plans",
-        id: mainObject.objectId,
+        id: mainObject.objectType + "_" + mainObject.objectId,
         body: {
             doc: {
                 relationship: { name: "plan" },
             },
         },
     });
+    await generateRelationshipsRecursive(mainObject, esClient);
 };
-exports.generateRelationships = generateRelationships;
+exports.generateRelationshipsStart = generateRelationshipsStart;
+const generateRelationshipsRecursive = async (mainObject, esClient) => {
+    for (const [keys, value] of Object.entries(mainObject)) {
+        if (typeof value === "object" && value !== null) {
+            if (Array.isArray(value)) {
+                for (const service of value) {
+                    await generateRelationshipsRecursive(service, esClient);
+                    await updateChildWithParent(service.objectType + "_" + service.objectId, mainObject.objectType + "_" + mainObject.objectId, esClient, mainObject.objectType + "_" + service.objectType);
+                }
+            }
+            else {
+                await generateRelationshipsRecursive(value, esClient);
+                await updateChildWithParent(value.objectType + "_" + value.objectId, mainObject.objectType + "_" + mainObject.objectId, esClient, mainObject.objectType + "_" + value.objectType);
+            }
+        }
+    }
+};
+exports.generateRelationshipsRecursive = generateRelationshipsRecursive;
 const updateChildWithParent = async (childId, parentId, esClient, planType) => {
     try {
         await esClient.update({
@@ -96,8 +96,11 @@ const createElasticsearchMappings = async (esClient) => {
                 relationship: {
                     type: "join",
                     relations: {
-                        plan: ["planCostShares", "linkedPlanServices"],
-                        linkedPlanService: ["linkedService", "planserviceCostShares"],
+                        plan: ["plan_membercostshare", "plan_planservice"],
+                        plan_planservice: [
+                            "planservice_membercostshare",
+                            "planservice_service",
+                        ],
                     },
                 },
             },
@@ -158,7 +161,6 @@ async function ObjectExists(objectId, esClient) {
             index: "plans",
             id: objectId,
         });
-        console.log(result);
         return result ? true : false;
     }
     catch (error) {
@@ -192,13 +194,13 @@ async function reconstructObject(mainObject, redisClient, esClient) {
                 reconstructedObject[key] = [];
                 for (const element of value) {
                     if (element.objectId) {
-                        const fetchedObject = await fetchObjectById(element.objectType + '_' + element.objectId, redisClient, esClient);
+                        const fetchedObject = await fetchObjectById(element.objectType + "_" + element.objectId, redisClient, esClient);
                         reconstructedObject[key].push(fetchedObject);
                     }
                 }
             }
             else if (value.objectId) {
-                reconstructedObject[key] = await fetchObjectById(value.objectType + '_' + value.objectId, redisClient, esClient);
+                reconstructedObject[key] = await fetchObjectById(value.objectType + "_" + value.objectId, redisClient, esClient);
             }
             else {
                 reconstructedObject[key] = await reconstructObject(value, redisClient, esClient);
@@ -234,11 +236,11 @@ async function deleteObject(objectId, redisClient, esClient) {
             if (typeof value === "object" && value !== null) {
                 if (Array.isArray(value)) {
                     for (const child of value) {
-                        await deleteObject(child.objectType + '_' + child.objectId, redisClient, esClient);
+                        await deleteObject(child.objectType + "_" + child.objectId, redisClient, esClient);
                     }
                 }
                 else {
-                    await deleteObject(value.objectType + '_' + value.objectId, redisClient, esClient);
+                    await deleteObject(value.objectType + "_" + value.objectId, redisClient, esClient);
                 }
             }
         }

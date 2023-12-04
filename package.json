@@ -9,7 +9,7 @@
     "start": "ts-node src/index.ts",
     "start2": "node dist/index.js",
     "prettier": "prettier --write 'src/**/*.{js,ts,tsx,jsx}'",
-    "dev": "prettier --write 'src/**/*.{js,ts,tsx,jsx}' && nodemon dist/index.js",
+    "dev": "prettier --write 'src/**/*.{js,ts,tsx,jsx}' && nodemon dist/index.js --trace-warnings",
     "create:migration2": "typeorm migration:create src/migrations/migrations",
     "codegen": "graphql-codegen --config codegen.ts",
     "run:migration": "yarn typeorm migration:run",
