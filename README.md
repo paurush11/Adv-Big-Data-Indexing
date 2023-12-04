@@ -100,3 +100,15 @@ That concludes the end of this project.
 
 त्रिविधं नरकस्येदं द्वारं नाशनमात्मन: |
 काम: क्रोधस्तथा लोभस्तस्मादेतत्त्रयं त्यजेत् ||  
+
+_____________
+
+## Version 2 
+
+### Requirements
+
+ 1. Id is corrected  - ObjectType_ObjectID
+ 2. ES should only be done by RabbitMQ
+ 3. Correct way of authenticating should be done with OAuth or google passport
+ 4. All JSON data should be processed, with ObjectType and ObjectID as the required fields
+ 5. Parent child Relationships should be based off of schema and not manual work
