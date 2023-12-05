@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteObject = exports.ObjectExists = exports.getMapping = exports.reconstructObject = exports.fetchObjectById = exports.fetchAllDocuments = exports.deleteAllDocuments = exports.createElasticsearchMappings = exports.updateChildWithParent = exports.generateRelationshipsRecursive = exports.generateRelationshipsStart = exports.saveObjectRecursive = exports.saveObjectInRedis = void 0;
+exports.updateChildWithParent = exports.saveObjectRecursive = exports.saveObjectInRedis = exports.reconstructObject = exports.getMapping = exports.generateRelationshipsStart = exports.generateRelationshipsRecursive = exports.fetchObjectById = exports.fetchAllDocuments = exports.deleteObject = exports.deleteAllDocuments = exports.createElasticsearchMappings = exports.ObjectExists = void 0;
 const saveObjectInRedis = async (objectID, planBody, redisClient) => {
     await redisClient.set(objectID, JSON.stringify(planBody), (err) => {
         if (err)

@@ -1,5 +1,4 @@
 import Redis from "ioredis";
-import { mainObject } from "./types";
 
 const saveObjectInRedis = async (
   objectID: string,
@@ -358,17 +357,9 @@ async function deleteObject(
 }
 
 export {
-  saveObjectInRedis,
-  saveObjectRecursive,
-  generateRelationshipsStart,
-  generateRelationshipsRecursive,
-  updateChildWithParent,
-  createElasticsearchMappings,
-  deleteAllDocuments,
-  fetchAllDocuments,
-  fetchObjectById,
-  reconstructObject,
-  getMapping,
-  ObjectExists,
-  deleteObject,
+  ObjectExists, createElasticsearchMappings,
+  deleteAllDocuments, deleteObject, fetchAllDocuments,
+  fetchObjectById, generateRelationshipsRecursive, generateRelationshipsStart, getMapping, reconstructObject, saveObjectInRedis,
+  saveObjectRecursive, updateChildWithParent
 };
+

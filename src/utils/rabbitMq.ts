@@ -115,9 +115,6 @@ const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
 };
 
 export {
-  generateCorrelationId,
-  sendMessage,
-  sendESRequest,
-  saveESItems,
-  receiveMessage,
+  generateCorrelationId, receiveMessage, saveESItems, sendESRequest, sendMessage
 };
+
