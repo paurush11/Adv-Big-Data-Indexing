@@ -27,6 +27,7 @@ const isLinkedPlanService = (obj: any): boolean => {
       isPlanCostShare(obj.planserviceCostShares))
   );
 };
+/// Very wrong function, should only add to it and not check all the types
 
 export const modifyObject = (
   earlyObj: any,

@@ -2,11 +2,7 @@ import amqp from "amqplib";
 
 import * as crypto from "crypto";
 
-const sendESRequest = async (
-  fetchSavedObject: any,
-
-  type: string,
-) => {
+const sendESRequest = async (fetchSavedObject: any, type: string) => {
   /// send message to ES to save this.
   let message = {
     doc: fetchSavedObject,
@@ -23,7 +19,6 @@ const rabbitMqConnection = async () => {
   const connection = await amqp.connect(process.env.RABBITMQ_URL || "");
   const channel = await connection.createChannel();
   const requestQueue = "requestQueue";
-
   return {
     connection,
     channel,
@@ -36,43 +31,64 @@ const generateCorrelationId = (planBody: any) => {
     .update(JSON.stringify(planBody))
     .digest("hex");
 };
-
 const sendMessage = async (message: string) => {
   const { connection, channel, requestQueue } = await rabbitMqConnection();
   await channel.assertQueue(requestQueue, { durable: false });
   console.log("message Sent");
-
   channel.sendToQueue(requestQueue, Buffer.from(message));
-
   setTimeout(() => {
     connection.close();
   }, 500);
+};
+const saveObjectInES = async (esClient: any, value: any) => {
+  await esClient.index({
+    index: "plans",
+    id: value.objectType + "_" + value.objectId,
+    body: value,
+  });
+};
+const saveESRecursive = async (
+  healthMessageJSON: any,
+  esClient: any,
+  type: string,
+) => {
+  const savedObject = {} as any;
+  for (const [key, value] of Object.entries(healthMessageJSON)) {
+    if (typeof value === "object" && value !== null) {
+      if (Array.isArray(value)) {
+        savedObject[key] = [];
+        const promises = value.map((val) => {
+          return (async () => {
+            saveESRecursive(val, esClient, type);
+            await saveObjectInES(esClient, val);
+
+            return val;
+          })();
+        });
+        savedObject[key] = await Promise.all(promises);
+      } else {
+        saveESRecursive(value, esClient, type);
+        savedObject[key] = healthMessageJSON;
+        await saveObjectInES(esClient, value);
+      }
+    } else {
+      savedObject.key = value;
+    }
+  }
+  await saveObjectInES(esClient, healthMessageJSON);
+
+  return savedObject;
 };
 const saveESItems = async (msg: string, esClient: any) => {
   try {
     const message = JSON.parse(msg);
     const type = message.type;
-    if (type === "insert") {
-      return await esClient.index({
-        index: "plans",
-        id: message.id,
-        body: message.body,
-      });
-    } else {
-      return await esClient.update({
-        index: "plans",
-        id: message.id,
-        body: {
-          doc: message.body,
-        },
-      });
-    }
+    await saveESRecursive(message.body, esClient, type);
   } catch (e) {
     console.error(e);
     return "not Done";
   }
 };
-
 const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
   const { connection, channel } = await rabbitMqConnection();
   await channel.assertQueue(queue, { durable: false });
@@ -82,13 +98,13 @@ const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
     (msg) => {
       if (msg) {
         const message = JSON.parse(msg.content.toString());
-
         const newMessage = {
           index: "plans",
           id: message.doc.objectId,
           body: message.doc,
           type: message.type,
         };
+        console.log(newMessage, null, 2);
 
         callBack(JSON.stringify(newMessage), esClient);
         channel.ack(msg);
@@ -99,9 +115,6 @@ const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
 };
 
 export {
-  generateCorrelationId,
-  sendMessage,
-  sendESRequest,
-  saveESItems,
-  receiveMessage,
+  generateCorrelationId, receiveMessage, saveESItems, sendESRequest, sendMessage
 };
+
