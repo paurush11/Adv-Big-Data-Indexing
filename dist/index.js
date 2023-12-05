@@ -230,7 +230,6 @@ const main = async () => {
                     .status(400)
                     .send("Wrong Object Type Entered, Must be within the scope of the Schema");
             }
-            console.log(updatedObject);
             const validator = new Validator();
             const result = validator.validate(updatedObject, JSON.parse(schema));
             if (!result.valid)
@@ -247,16 +246,16 @@ const main = async () => {
             if (clientEtag && clientEtag !== generatedEtag) {
                 return res.status(412).send("Precondition failed");
             }
-            const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(updatedObject, redisClient);
             try {
-                (0, elasticSearch_1.saveObjectInRedis)(key, fetchSavedObject, redisClient);
+                const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(updatedObject, redisClient);
+                generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(updatedObject));
+                res.setHeader("ETag", generatedEtag);
+                await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PATCH");
+                await checkIfObjectExistsNow(fetchSavedObject, esClient, updatedObject, res, 200);
             }
             catch (e) {
                 res.status(500).send("Error in saving value");
             }
-            generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(updatedObject));
-            res.setHeader("ETag", generatedEtag);
-            await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PATCH");
         }
         catch (e) {
             return res.status(500).send("Internal Server Error");

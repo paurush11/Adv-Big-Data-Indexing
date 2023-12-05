@@ -344,7 +344,7 @@ const main = async () => {
             "Wrong Object Type Entered, Must be within the scope of the Schema",
           );
       }
-      console.log(updatedObject);
+      
       const validator = new Validator();
       const result = validator.validate(
         updatedObject,
@@ -370,47 +370,26 @@ const main = async () => {
       }
 
       /// We have made our new object and now also modified it. Now all we need to do is to save it just like the put request.
-      const fetchSavedObject = await saveObjectRecursive(
-        updatedObject,
-        redisClient,
-      );
+      try{
 
-      try {
-        saveObjectInRedis(key, fetchSavedObject, redisClient);
-        // saveObject(objectID, planBody, redisClient);
-      } catch (e) {
+        const fetchSavedObject = await saveObjectRecursive(
+          updatedObject,
+          redisClient,
+        );
+        generatedEtag = generateEtag(JSON.stringify(updatedObject));
+        res.setHeader("ETag", generatedEtag);
+        await sendESRequest(fetchSavedObject, "PATCH");
+        await checkIfObjectExistsNow(
+          fetchSavedObject,
+          esClient,
+          updatedObject,
+          res,
+          200,
+        );
+
+      }catch(e){
         res.status(500).send("Error in saving value");
       }
-
-      ///latest Etag
-      generatedEtag = generateEtag(JSON.stringify(updatedObject));
-      res.setHeader("ETag", generatedEtag);
-
-      await sendESRequest(fetchSavedObject, "PATCH");
-      /// set Interval for
-      // let found = false;
-      // const interval = setInterval(async () => {
-      //   const result = await ObjectExists(fetchSavedObject.objectId, esClient);
-      //   if (result) {
-      //     found = false;
-      //     clearInterval(interval);
-
-      //     const reconstructedMainObject = await reconstructObject(
-      //       fetchSavedObject,
-      //       redisClient,
-      //       esClient,
-      //     );
-      //     await generateRelationshipsStart(reconstructedMainObject, esClient);
-      //     return res.status(200).send(reconstructedMainObject);
-      //   }
-      // }, 2000);
-      // await esClient.update({
-      //   index: "plans",
-      //   id: key,
-      //   body: {
-      //     doc: fetchSavedObject,
-      //   },
-      // });
     } catch (e) {
       return res.status(500).send("Internal Server Error");
     }
