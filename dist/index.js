@@ -15,7 +15,7 @@ const fs = require("fs");
 const { Client } = require("@elastic/elasticsearch");
 const { Validator } = require("jsonschema");
 const checkIfObjectExistsNow = async (fetchSavedObject, esClient, planBody, res, statusCode) => {
-    const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectType + "_" + fetchSavedObject.objectId, esClient);
+    const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectType + "_" + fetchSavedObject.objectId, esClient, fetchSavedObject);
     console.log("Checking if object exists...");
     if (result) {
         console.log("Object found:", result);
@@ -43,7 +43,7 @@ const main = async () => {
         },
     });
     await (0, rabbitMq_1.receiveMessage)("requestQueue", esClient, rabbitMq_1.saveESItems);
-    const resp = await esClient.info();
+    await esClient.info();
     const app = (0, express_1.default)();
     const redisClient = new ioredis_1.default();
     app.use(express_1.default.json());
@@ -195,17 +195,16 @@ const main = async () => {
                     .status(400)
                     .send("Invalid Date Object! Make sure it's in DD-MM-YYYY format");
             }
-            const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(planBody, redisClient);
             try {
-                (0, elasticSearch_1.saveObjectInRedis)(key, fetchSavedObject, redisClient);
+                const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(planBody, redisClient);
+                generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
+                res.setHeader("ETag", generatedEtag);
+                await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PUT");
+                await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, 200);
             }
             catch (e) {
                 res.status(500).send("Error in saving value");
             }
-            generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
-            res.setHeader("ETag", generatedEtag);
-            await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PUT");
-            await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, 200);
         }
         catch (error) {
             return res.status(500).send("Internal Server Error");
@@ -258,17 +257,6 @@ const main = async () => {
             generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(updatedObject));
             res.setHeader("ETag", generatedEtag);
             await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PATCH");
-            let found = false;
-            const interval = setInterval(async () => {
-                const result = await (0, elasticSearch_1.ObjectExists)(fetchSavedObject.objectId, esClient);
-                if (result) {
-                    found = false;
-                    clearInterval(interval);
-                    const reconstructedMainObject = await (0, elasticSearch_1.reconstructObject)(fetchSavedObject, redisClient, esClient);
-                    await (0, elasticSearch_1.generateRelationshipsStart)(reconstructedMainObject, esClient);
-                    return res.status(200).send(reconstructedMainObject);
-                }
-            }, 2000);
         }
         catch (e) {
             return res.status(500).send("Internal Server Error");

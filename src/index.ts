@@ -31,11 +31,12 @@ const checkIfObjectExistsNow = async (
   esClient: any,
   planBody: any,
   res: any,
-  statusCode:any
+  statusCode: any,
 ) => {
   const result = await ObjectExists(
     fetchSavedObject.objectType + "_" + fetchSavedObject.objectId,
     esClient,
+    fetchSavedObject,
   );
   console.log("Checking if object exists...");
   if (result) {
@@ -46,7 +47,14 @@ const checkIfObjectExistsNow = async (
   } else {
     console.log("Object not found, retrying...");
     setTimeout(
-      () => checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, statusCode),
+      () =>
+        checkIfObjectExistsNow(
+          fetchSavedObject,
+          esClient,
+          planBody,
+          res,
+          statusCode,
+        ),
       200,
     );
   }
@@ -75,9 +83,7 @@ const main = async () => {
   //  const val =  await fetchAllDocuments('plans', esClient)
   // console.log(val.hits)
 
-  const resp = await esClient.info();
-  // console.log(resp);
-  // console.log(resp)
+  await esClient.info();
   const app = express();
   const redisClient = new Redis();
   app.use(express.json());
@@ -191,7 +197,13 @@ const main = async () => {
 
       ///RabbitMQ request
       await sendESRequest(fetchSavedObject, "POST");
-      await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, 201);
+      await checkIfObjectExistsNow(
+        fetchSavedObject,
+        esClient,
+        planBody,
+        res,
+        201,
+      );
       /// wait for response from ES Server to see if Object has been saved or not
     } catch (e) {
       console.log(e);
@@ -244,7 +256,7 @@ const main = async () => {
       const key = req.params.id;
       const planBody = req.body;
 
-      const obj = await redisClient.get("plan_"+key);
+      const obj = await redisClient.get("plan_" + key);
       if (!obj) return res.status(404).send("No such Object Exists");
       ///verify the etag on reconstructed obj
       const reconstructedOldObject = await reconstructObject(
@@ -276,19 +288,28 @@ const main = async () => {
       ///object validated
       ///now it means that object is valid and fully safe to save.
       ///break down the object and make the desired changes
-      const fetchSavedObject = await saveObjectRecursive(planBody, redisClient);
+
       try {
-        saveObjectInRedis(key, fetchSavedObject, redisClient);
+        const fetchSavedObject = await saveObjectRecursive(
+          planBody,
+          redisClient,
+        );
+        generatedEtag = generateEtag(JSON.stringify(planBody));
+        res.setHeader("ETag", generatedEtag);
+
+        await sendESRequest(fetchSavedObject, "PUT");
+        await checkIfObjectExistsNow(
+          fetchSavedObject,
+          esClient,
+          planBody,
+          res,
+          200,
+        );
+
         // saveObject(objectID, planBody, redisClient);
       } catch (e) {
         res.status(500).send("Error in saving value");
       }
-      ///New Etag
-      generatedEtag = generateEtag(JSON.stringify(planBody));
-      res.setHeader("ETag", generatedEtag);
-      await sendESRequest(fetchSavedObject, "PUT");
-      await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, res, 200);
-     
     } catch (error) {
       return res.status(500).send("Internal Server Error");
     }
@@ -302,7 +323,7 @@ const main = async () => {
       const key = req.params.id;
       const updatedBody = req.body;
 
-      const obj = await redisClient.get("plan_"+key);
+      const obj = await redisClient.get("plan_" + key);
       if (!obj) {
         return res.status(404).send("No such object found");
       }
@@ -367,22 +388,22 @@ const main = async () => {
 
       await sendESRequest(fetchSavedObject, "PATCH");
       /// set Interval for
-      let found = false;
-      const interval = setInterval(async () => {
-        const result = await ObjectExists(fetchSavedObject.objectId, esClient);
-        if (result) {
-          found = false;
-          clearInterval(interval);
+      // let found = false;
+      // const interval = setInterval(async () => {
+      //   const result = await ObjectExists(fetchSavedObject.objectId, esClient);
+      //   if (result) {
+      //     found = false;
+      //     clearInterval(interval);
 
-          const reconstructedMainObject = await reconstructObject(
-            fetchSavedObject,
-            redisClient,
-            esClient,
-          );
-          await generateRelationshipsStart(reconstructedMainObject, esClient);
-          return res.status(200).send(reconstructedMainObject);
-        }
-      }, 2000);
+      //     const reconstructedMainObject = await reconstructObject(
+      //       fetchSavedObject,
+      //       redisClient,
+      //       esClient,
+      //     );
+      //     await generateRelationshipsStart(reconstructedMainObject, esClient);
+      //     return res.status(200).send(reconstructedMainObject);
+      //   }
+      // }, 2000);
       // await esClient.update({
       //   index: "plans",
       //   id: key,

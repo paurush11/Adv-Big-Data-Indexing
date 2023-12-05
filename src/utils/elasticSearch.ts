@@ -49,17 +49,32 @@ const saveObjectRecursive = async (planBody: any, redisClient: Redis) => {
   return savedObject;
 };
 const generateRelationshipsStart = async (mainObject: any, esClient: any) => {
-  await esClient.update({
-    index: "plans",
-    id: mainObject.objectType + "_" + mainObject.objectId,
-    body: {
-      doc: {
-        relationship: { name: "plan" },
+  console.log(
+    {
+      index: "plans",
+      id: mainObject.objectType + "_" + mainObject.objectId,
+      body: {
+        doc: {
+          relationship: { name: "plan" },
+        },
       },
-
-      // ... mainObject fields ...
     },
-  });
+    null,
+    2,
+  );
+  try {
+    await esClient.update({
+      index: "plans",
+      id: mainObject.objectType + "_" + mainObject.objectId,
+      body: {
+        doc: {
+          relationship: { name: "plan" },
+        },
+      },
+    });
+  } catch (E) {
+    console.log(E);
+  }
   await generateRelationshipsRecursive(mainObject, esClient);
 };
 const generateRelationshipsRecursive = async (
@@ -199,13 +214,18 @@ async function fetchAllDocuments(index: any, client: any) {
     console.error("Error fetching documents:", error);
   }
 }
-async function ObjectExists(objectId: string, esClient: any) {
+async function ObjectExists(objectId: string, esClient: any, planBody: any) {
   try {
     const result = await esClient.get({
       index: "plans",
       id: objectId,
     });
-    return result ? true : false;
+    if (result) {
+      console.log("this is the result\n\n\n");
+      if (JSON.stringify(planBody) === JSON.stringify(result._source))
+        return true;
+    }
+    return false;
   } catch (error) {
     // Check if the error is because the document was not found
     if (error.meta && error.meta.statusCode === 404) {

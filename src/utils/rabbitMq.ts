@@ -56,7 +56,11 @@ const updateObjectInES = async (esClient: any, value: any) => {
     },
   });
 };
-const saveESRecursive = async (healthMessageJSON: any, esClient: any, type: string) => {
+const saveESRecursive = async (
+  healthMessageJSON: any,
+  esClient: any,
+  type: string,
+) => {
   const savedObject = {} as any;
   for (const [key, value] of Object.entries(healthMessageJSON)) {
     if (typeof value === "object" && value !== null) {
@@ -65,11 +69,8 @@ const saveESRecursive = async (healthMessageJSON: any, esClient: any, type: stri
         const promises = value.map((val) => {
           return (async () => {
             saveESRecursive(val, esClient, type);
-            if(type === "insert"){
-              await saveObjectInES(esClient, val);
-            }else{
-              await updateObjectInES(esClient, val);
-            }
+            await saveObjectInES(esClient, val);
+
             return val;
           })();
         });
@@ -77,21 +78,14 @@ const saveESRecursive = async (healthMessageJSON: any, esClient: any, type: stri
       } else {
         saveESRecursive(value, esClient, type);
         savedObject[key] = healthMessageJSON;
-        if(type === "insert"){
-          await saveObjectInES(esClient, value);
-        }else{
-          await updateObjectInES(esClient, value);
-        }
+        await saveObjectInES(esClient, value);
       }
     } else {
       savedObject.key = value;
     }
   }
-  if(type === "insert"){
-    await saveObjectInES(esClient, healthMessageJSON);
-  }else{
-    await updateObjectInES(esClient, healthMessageJSON);
-  }
+  await saveObjectInES(esClient, healthMessageJSON);
+
   return savedObject;
 };
 const saveESItems = async (msg: string, esClient: any) => {
@@ -107,7 +101,7 @@ const saveESItems = async (msg: string, esClient: any) => {
 const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
   const { connection, channel } = await rabbitMqConnection();
   await channel.assertQueue(queue, { durable: false });
-  console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue)
+  console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
   channel.consume(
     queue,
     (msg) => {
@@ -119,6 +113,7 @@ const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
           body: message.doc,
           type: message.type,
         };
+        console.log(newMessage, null, 2);
 
         callBack(JSON.stringify(newMessage), esClient);
         channel.ack(msg);

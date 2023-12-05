@@ -95,12 +95,7 @@ const saveESRecursive = async (healthMessageJSON, esClient, type) => {
                 const promises = value.map((val) => {
                     return (async () => {
                         saveESRecursive(val, esClient, type);
-                        if (type === "insert") {
-                            await saveObjectInES(esClient, val);
-                        }
-                        else {
-                            await updateObjectInES(esClient, val);
-                        }
+                        await saveObjectInES(esClient, val);
                         return val;
                     })();
                 });
@@ -109,24 +104,14 @@ const saveESRecursive = async (healthMessageJSON, esClient, type) => {
             else {
                 saveESRecursive(value, esClient, type);
                 savedObject[key] = healthMessageJSON;
-                if (type === "insert") {
-                    await saveObjectInES(esClient, value);
-                }
-                else {
-                    await updateObjectInES(esClient, value);
-                }
+                await saveObjectInES(esClient, value);
             }
         }
         else {
             savedObject.key = value;
         }
     }
-    if (type === "insert") {
-        await saveObjectInES(esClient, healthMessageJSON);
-    }
-    else {
-        await updateObjectInES(esClient, healthMessageJSON);
-    }
+    await saveObjectInES(esClient, healthMessageJSON);
     return savedObject;
 };
 const saveESItems = async (msg, esClient) => {
@@ -154,6 +139,7 @@ const receiveMessage = async (queue, esClient, callBack) => {
                 body: message.doc,
                 type: message.type,
             };
+            console.log(newMessage, null, 2);
             callBack(JSON.stringify(newMessage), esClient);
             channel.ack(msg);
         }

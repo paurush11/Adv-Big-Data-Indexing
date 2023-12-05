@@ -38,7 +38,7 @@ const saveObjectRecursive = async (planBody, redisClient) => {
 };
 exports.saveObjectRecursive = saveObjectRecursive;
 const generateRelationshipsStart = async (mainObject, esClient) => {
-    await esClient.update({
+    console.log({
         index: "plans",
         id: mainObject.objectType + "_" + mainObject.objectId,
         body: {
@@ -46,7 +46,21 @@ const generateRelationshipsStart = async (mainObject, esClient) => {
                 relationship: { name: "plan" },
             },
         },
-    });
+    }, null, 2);
+    try {
+        await esClient.update({
+            index: "plans",
+            id: mainObject.objectType + "_" + mainObject.objectId,
+            body: {
+                doc: {
+                    relationship: { name: "plan" },
+                },
+            },
+        });
+    }
+    catch (E) {
+        console.log(E);
+    }
     await generateRelationshipsRecursive(mainObject, esClient);
 };
 exports.generateRelationshipsStart = generateRelationshipsStart;
@@ -155,13 +169,18 @@ async function fetchAllDocuments(index, client) {
     }
 }
 exports.fetchAllDocuments = fetchAllDocuments;
-async function ObjectExists(objectId, esClient) {
+async function ObjectExists(objectId, esClient, planBody) {
     try {
         const result = await esClient.get({
             index: "plans",
             id: objectId,
         });
-        return result ? true : false;
+        if (result) {
+            console.log("this is the result\n\n\n");
+            if (JSON.stringify(planBody) === JSON.stringify(result._source))
+                return true;
+        }
+        return false;
     }
     catch (error) {
         if (error.meta && error.meta.statusCode === 404) {
