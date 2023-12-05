@@ -47,15 +47,6 @@ const saveObjectInES = async (esClient: any, value: any) => {
     body: value,
   });
 };
-const updateObjectInES = async (esClient: any, value: any) => {
-  await esClient.index({
-    index: "plans",
-    id: value.objectType + "_" + value.objectId,
-    body: {
-      doc: value,
-    },
-  });
-};
 const saveESRecursive = async (
   healthMessageJSON: any,
   esClient: any,
