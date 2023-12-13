@@ -112,3 +112,9 @@ _____________
  3. Correct way of authenticating should be done with OAuth or google passport  --- To be done
  4. All JSON data should be processed, with ObjectType and ObjectID as the required fields --- Depend on the schema
  5. Parent child Relationships should be based off of schema and not manual work --- Depend on the schema
+
+### Updates
+1. Learned that Redis is Authoritative in nature (meaning that I just need to store all of my data in redis and not actually wait for ES search to save data, as soon as data is sent to queue just send a response that data has been saved, later on if the data in queue is dequeued, save it in a separate queue that will only dequeue if the data has been stored correctly, if not keep on repeating the process and not let the user know about this but the backend team should know about this.)
+2. Also, Delete as a Crud Operation should Involve Es Search delete done by Rabbit Mq
+
+
