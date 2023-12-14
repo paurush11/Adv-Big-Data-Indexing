@@ -92,7 +92,7 @@ const saveESItems = async (msg: string, esClient: any) => {
   try {
     const message = JSON.parse(msg);
     const type = message.type;
-    await saveESRecursive(message.body, esClient, type);
+    return await saveESRecursive(message.body, esClient, type);
   } catch (e) {
     console.error(e);
     return "not Done";
@@ -118,7 +118,6 @@ const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
           channel.ack(msg);
         }catch(e){
           console.error(e)
-          return "Error in processing ";
         }
       }
     },
