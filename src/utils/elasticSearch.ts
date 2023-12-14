@@ -308,11 +308,7 @@ const getMapping = async (client: any) => {
     console.error("Error getting mapping:", error);
   }
 };
-async function deleteObject(
-  objectId: string,
-  redisClient: Redis,
-  esClient: any,
-) {
+async function deleteObject(objectId: string, redisClient: Redis) {
   try {
     const objectStr = await redisClient.get(objectId);
     if (!objectStr) {
@@ -327,7 +323,6 @@ async function deleteObject(
             await deleteObject(
               child.objectType + "_" + child.objectId,
               redisClient,
-              esClient,
             );
           }
         } else {
@@ -335,19 +330,11 @@ async function deleteObject(
           await deleteObject(
             (value as any).objectType + "_" + (value as any).objectId,
             redisClient,
-            esClient,
           );
         }
       }
     }
-    console.log(objectId);
     await redisClient.del(objectId);
-
-    // Delete the parent object from Elasticsearch
-    await esClient.delete({
-      index: "plans",
-      id: objectId,
-    });
     console.log(
       `Object with ID ${objectId} and its children deleted successfully.`,
     );
@@ -357,9 +344,17 @@ async function deleteObject(
 }
 
 export {
-  ObjectExists, createElasticsearchMappings,
-  deleteAllDocuments, deleteObject, fetchAllDocuments,
-  fetchObjectById, generateRelationshipsRecursive, generateRelationshipsStart, getMapping, reconstructObject, saveObjectInRedis,
-  saveObjectRecursive, updateChildWithParent
+  ObjectExists,
+  createElasticsearchMappings,
+  deleteAllDocuments,
+  deleteObject,
+  fetchAllDocuments,
+  fetchObjectById,
+  generateRelationshipsRecursive,
+  generateRelationshipsStart,
+  getMapping,
+  reconstructObject,
+  saveObjectInRedis,
+  saveObjectRecursive,
+  updateChildWithParent,
 };
-

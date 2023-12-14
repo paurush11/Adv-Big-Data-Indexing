@@ -12,7 +12,7 @@ import {
   putPlan,
 } from "./utils/apiLogicForCRUD";
 import { getMappingFromEs } from "./utils/apiLogicForSearch";
-import { fetchAllDocuments } from "./utils/elasticSearch";
+import { deleteAllDocuments, fetchAllDocuments } from "./utils/elasticSearch";
 import { verifyHeaderToken } from "./utils/jwtAuth";
 import { receiveMessage, saveESItems } from "./utils/rabbitMq";
 
@@ -78,7 +78,6 @@ const main = async () => {
     const response = await postPlan(
       "plan_" + planBody.objectId,
       redisClient,
-      esClient,
       planBody,
     );
     if (response!.response?.eTag) {
@@ -97,7 +96,7 @@ const main = async () => {
   });
   app.delete("/plan/:id", verifyHeaderToken, async (req, res) => {
     const key = "plan_" + req.params.id;
-    const response = await deletePlan(key, redisClient, esClient);
+    const response = await deletePlan(key, redisClient);
     return res.status(response.response.status).send(response.response.message);
   });
   app.put("/plan/:id", verifyHeaderToken, async (req, res) => {

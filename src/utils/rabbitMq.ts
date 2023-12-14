@@ -2,7 +2,10 @@ import amqp from "amqplib";
 
 import * as crypto from "crypto";
 
-const sendESRequest = async (fetchSavedObject: any, type: string) => {
+const sendESRequest = async (
+  fetchSavedObject: Object | String,
+  type: string,
+) => {
   /// send message to ES to save this.
   let message = {
     doc: fetchSavedObject,
@@ -12,6 +15,9 @@ const sendESRequest = async (fetchSavedObject: any, type: string) => {
     await sendMessage(JSON.stringify(message));
   } else if (type === "PATCH" || type === "PUT") {
     message.type = "update";
+    await sendMessage(JSON.stringify(message));
+  } else {
+    message.type = "delete";
     await sendMessage(JSON.stringify(message));
   }
 };
@@ -40,12 +46,19 @@ const sendMessage = async (message: string) => {
     connection.close();
   }, 500);
 };
-const saveObjectInES = async (esClient: any, value: any) => {
-  await esClient.index({
-    index: "plans",
-    id: value.objectType + "_" + value.objectId,
-    body: value,
-  });
+const OperateObjectInES = async (esClient: any, value: any, type: string) => {
+  if (type === "delete") {
+    await esClient.delete({
+      index: "plans",
+      id: value.objectType + "_" + value.objectId,
+    });
+  } else {
+    await esClient.index({
+      index: "plans",
+      id: value.objectType + "_" + value.objectId,
+      body: value,
+    });
+  }
 };
 const saveESRecursive = async (
   healthMessageJSON: any,
@@ -60,8 +73,6 @@ const saveESRecursive = async (
         const promises = value.map((val) => {
           return (async () => {
             saveESRecursive(val, esClient, type);
-            await saveObjectInES(esClient, val);
-
             return val;
           })();
         });
@@ -69,14 +80,12 @@ const saveESRecursive = async (
       } else {
         saveESRecursive(value, esClient, type);
         savedObject[key] = healthMessageJSON;
-        await saveObjectInES(esClient, value);
       }
     } else {
       savedObject.key = value;
     }
   }
-  await saveObjectInES(esClient, healthMessageJSON);
-
+  await OperateObjectInES(esClient, healthMessageJSON, type);
   return savedObject;
 };
 const saveESItems = async (msg: string, esClient: any) => {
@@ -90,7 +99,7 @@ const saveESItems = async (msg: string, esClient: any) => {
   }
 };
 const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
-  const { connection, channel } = await rabbitMqConnection();
+  const { channel } = await rabbitMqConnection();
   await channel.assertQueue(queue, { durable: false });
   console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
   channel.consume(
@@ -104,10 +113,13 @@ const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
           body: message.doc,
           type: message.type,
         };
-        console.log(newMessage, null, 2);
-
-        callBack(JSON.stringify(newMessage), esClient);
-        channel.ack(msg);
+        try{
+          callBack(JSON.stringify(newMessage), esClient);
+          channel.ack(msg);
+        }catch(e){
+          console.error(e)
+          return "Error in processing ";
+        }
       }
     },
     { noAck: false },
@@ -115,6 +127,9 @@ const receiveMessage = async (queue: string, esClient: any, callBack: any) => {
 };
 
 export {
-  generateCorrelationId, receiveMessage, saveESItems, sendESRequest, sendMessage
+  generateCorrelationId,
+  receiveMessage,
+  saveESItems,
+  sendESRequest,
+  sendMessage,
 };
-

@@ -37,7 +37,7 @@ const getPlan = async (key, redisClient, esClient, clientEtag) => {
     return returnBodyResponse(false, 200, reconstructedMainObject, generatedEtag);
 };
 exports.getPlan = getPlan;
-const postPlan = async (key, redisClient, esClient, planBody) => {
+const postPlan = async (key, redisClient, planBody) => {
     console.log("Adding a plan to the redis client");
     const schema = await fetchObjectFromRedis("schema", redisClient);
     if (schema === "No Such Object Exists") {
@@ -64,7 +64,7 @@ const postPlan = async (key, redisClient, esClient, planBody) => {
         const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(planBody, redisClient);
         const generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
         await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "POST");
-        return await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, 201, generatedEtag);
+        return returnBodyResponse(false, 201, "Object Successfully Saved", generatedEtag);
     }
     catch (e) {
         return returnBodyResponse(true, 500, "Error in saving object");
@@ -103,7 +103,7 @@ const putPlan = async (key, redisClient, esClient, planBody, clientEtag) => {
         const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(planBody, redisClient);
         generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(planBody));
         await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PUT");
-        return await checkIfObjectExistsNow(fetchSavedObject, esClient, planBody, 200, generatedEtag);
+        return returnBodyResponse(false, 200, "Object Successfully Saved", generatedEtag);
     }
     catch (e) {
         return returnBodyResponse(true, 500, "Error in saving object");
@@ -148,20 +148,21 @@ const patchPlan = async (key, redisClient, esClient, planBody, clientEtag) => {
         const fetchSavedObject = await (0, elasticSearch_1.saveObjectRecursive)(updatedObject, redisClient);
         generatedEtag = (0, jwtAuth_1.generateEtag)(JSON.stringify(updatedObject));
         await (0, rabbitMq_1.sendESRequest)(fetchSavedObject, "PATCH");
-        return await checkIfObjectExistsNow(fetchSavedObject, esClient, updatedObject, 200, generatedEtag);
+        return returnBodyResponse(false, 200, "Object Successfully Saved", generatedEtag);
     }
     catch (e) {
         return returnBodyResponse(true, 500, "Error in saving object");
     }
 };
 exports.patchPlan = patchPlan;
-const deletePlan = async (key, redisClient, esClient) => {
+const deletePlan = async (key, redisClient) => {
     const obj = await fetchObjectFromRedis(key, redisClient);
     if (obj === "No Such Object Exists") {
         return returnStringResponse(true, 404, "No such Object Exists");
     }
     try {
-        await (0, elasticSearch_1.deleteObject)(key, redisClient, esClient);
+        await (0, elasticSearch_1.deleteObject)(key, redisClient);
+        await (0, rabbitMq_1.sendESRequest)(JSON.parse(obj), "DELETE");
         return returnStringResponse(false, 200, "Plan successfully deleted.");
     }
     catch (e) {

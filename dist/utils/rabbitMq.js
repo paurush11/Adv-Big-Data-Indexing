@@ -41,6 +41,10 @@ const sendESRequest = async (fetchSavedObject, type) => {
         message.type = "update";
         await sendMessage(JSON.stringify(message));
     }
+    else {
+        message.type = "delete";
+        await sendMessage(JSON.stringify(message));
+    }
 };
 exports.sendESRequest = sendESRequest;
 const rabbitMqConnection = async () => {
@@ -70,12 +74,20 @@ const sendMessage = async (message) => {
     }, 500);
 };
 exports.sendMessage = sendMessage;
-const saveObjectInES = async (esClient, value) => {
-    await esClient.index({
-        index: "plans",
-        id: value.objectType + "_" + value.objectId,
-        body: value,
-    });
+const OperateObjectInES = async (esClient, value, type) => {
+    if (type === "delete") {
+        await esClient.delete({
+            index: "plans",
+            id: value.objectType + "_" + value.objectId,
+        });
+    }
+    else {
+        await esClient.index({
+            index: "plans",
+            id: value.objectType + "_" + value.objectId,
+            body: value,
+        });
+    }
 };
 const saveESRecursive = async (healthMessageJSON, esClient, type) => {
     const savedObject = {};
@@ -86,7 +98,6 @@ const saveESRecursive = async (healthMessageJSON, esClient, type) => {
                 const promises = value.map((val) => {
                     return (async () => {
                         saveESRecursive(val, esClient, type);
-                        await saveObjectInES(esClient, val);
                         return val;
                     })();
                 });
@@ -95,14 +106,13 @@ const saveESRecursive = async (healthMessageJSON, esClient, type) => {
             else {
                 saveESRecursive(value, esClient, type);
                 savedObject[key] = healthMessageJSON;
-                await saveObjectInES(esClient, value);
             }
         }
         else {
             savedObject.key = value;
         }
     }
-    await saveObjectInES(esClient, healthMessageJSON);
+    await OperateObjectInES(esClient, healthMessageJSON, type);
     return savedObject;
 };
 const saveESItems = async (msg, esClient) => {
@@ -118,7 +128,7 @@ const saveESItems = async (msg, esClient) => {
 };
 exports.saveESItems = saveESItems;
 const receiveMessage = async (queue, esClient, callBack) => {
-    const { connection, channel } = await rabbitMqConnection();
+    const { channel } = await rabbitMqConnection();
     await channel.assertQueue(queue, { durable: false });
     console.log(" [*] Waiting for messages in %s. To exit press CTRL+C", queue);
     channel.consume(queue, (msg) => {
@@ -130,9 +140,14 @@ const receiveMessage = async (queue, esClient, callBack) => {
                 body: message.doc,
                 type: message.type,
             };
-            console.log(newMessage, null, 2);
-            callBack(JSON.stringify(newMessage), esClient);
-            channel.ack(msg);
+            try {
+                callBack(JSON.stringify(newMessage), esClient);
+                channel.ack(msg);
+            }
+            catch (e) {
+                console.error(e);
+                return "Error in processing ";
+            }
         }
     }, { noAck: false });
 };

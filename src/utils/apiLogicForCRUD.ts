@@ -82,7 +82,6 @@ const getPlan = async (
 const postPlan = async (
   key: string,
   redisClient: Redis,
-  esClient: any,
   planBody: any,
 ) => {
   console.log("Adding a plan to the redis client");
@@ -127,17 +126,24 @@ const postPlan = async (
       "Invalid Date Object! Date not match the Schema provided. Make sure its DD-MM-YYYY format",
     );
   }
+
   try {
     const fetchSavedObject = await saveObjectRecursive(planBody, redisClient);
     const generatedEtag = generateEtag(JSON.stringify(planBody));
     await sendESRequest(fetchSavedObject, "POST");
-    return await checkIfObjectExistsNow(
-      fetchSavedObject,
-      esClient,
-      planBody,
+    return returnBodyResponse(
+      false,
       201,
+      "Object Successfully Saved",
       generatedEtag,
     );
+    // return await checkIfObjectExistsNow(
+    //   fetchSavedObject,
+    //   esClient,
+    //   planBody,
+    //   201,
+    //   generatedEtag,
+    // );
   } catch (e) {
     return returnBodyResponse(true, 500, "Error in saving object");
   }
@@ -208,13 +214,19 @@ const putPlan = async (
     const fetchSavedObject = await saveObjectRecursive(planBody, redisClient);
     generatedEtag = generateEtag(JSON.stringify(planBody));
     await sendESRequest(fetchSavedObject, "PUT");
-    return await checkIfObjectExistsNow(
-      fetchSavedObject,
-      esClient,
-      planBody,
+    return returnBodyResponse(
+      false,
       200,
+      "Object Successfully Saved",
       generatedEtag,
     );
+    // return await checkIfObjectExistsNow(
+    //   fetchSavedObject,
+    //   esClient,
+    //   planBody,
+    //   200,
+    //   generatedEtag,
+    // );
   } catch (e) {
     return returnBodyResponse(true, 500, "Error in saving object");
   }
@@ -300,25 +312,32 @@ const patchPlan = async (
     );
     generatedEtag = generateEtag(JSON.stringify(updatedObject));
     await sendESRequest(fetchSavedObject, "PATCH");
-    return await checkIfObjectExistsNow(
-      fetchSavedObject,
-      esClient,
-      updatedObject,
+    return returnBodyResponse(
+      false,
       200,
+      "Object Successfully Saved",
       generatedEtag,
     );
+    // return await checkIfObjectExistsNow(
+    //   fetchSavedObject,
+    //   esClient,
+    //   updatedObject,
+    //   200,
+    //   generatedEtag,
+    // );
   } catch (e) {
     return returnBodyResponse(true, 500, "Error in saving object");
   }
 };
 
-const deletePlan = async (key: string, redisClient: Redis, esClient: any) => {
+const deletePlan = async (key: string, redisClient: Redis) => {
   const obj = await fetchObjectFromRedis(key, redisClient);
   if (obj === "No Such Object Exists") {
     return returnStringResponse(true, 404, "No such Object Exists");
   }
   try {
-    await deleteObject(key, redisClient, esClient);
+    await deleteObject(key, redisClient);
+    await sendESRequest(JSON.parse(obj), "DELETE");
     return returnStringResponse(false, 200, "Plan successfully deleted.");
   } catch (e) {
     return returnStringResponse(true, 500, "Error deleting plan.");

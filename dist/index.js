@@ -52,7 +52,7 @@ const main = async () => {
         var _a;
         console.log("Adding a plan to the redis client");
         const planBody = req.body;
-        const response = await (0, apiLogicForCRUD_1.postPlan)("plan_" + planBody.objectId, redisClient, esClient, planBody);
+        const response = await (0, apiLogicForCRUD_1.postPlan)("plan_" + planBody.objectId, redisClient, planBody);
         if ((_a = response.response) === null || _a === void 0 ? void 0 : _a.eTag) {
             res.setHeader("ETag", response.response.eTag);
         }
@@ -69,7 +69,7 @@ const main = async () => {
     });
     app.delete("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {
         const key = "plan_" + req.params.id;
-        const response = await (0, apiLogicForCRUD_1.deletePlan)(key, redisClient, esClient);
+        const response = await (0, apiLogicForCRUD_1.deletePlan)(key, redisClient);
         return res.status(response.response.status).send(response.response.message);
     });
     app.put("/plan/:id", jwtAuth_1.verifyHeaderToken, async (req, res) => {

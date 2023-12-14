@@ -244,7 +244,7 @@ const getMapping = async (client) => {
     }
 };
 exports.getMapping = getMapping;
-async function deleteObject(objectId, redisClient, esClient) {
+async function deleteObject(objectId, redisClient) {
     try {
         const objectStr = await redisClient.get(objectId);
         if (!objectStr) {
@@ -255,20 +255,15 @@ async function deleteObject(objectId, redisClient, esClient) {
             if (typeof value === "object" && value !== null) {
                 if (Array.isArray(value)) {
                     for (const child of value) {
-                        await deleteObject(child.objectType + "_" + child.objectId, redisClient, esClient);
+                        await deleteObject(child.objectType + "_" + child.objectId, redisClient);
                     }
                 }
                 else {
-                    await deleteObject(value.objectType + "_" + value.objectId, redisClient, esClient);
+                    await deleteObject(value.objectType + "_" + value.objectId, redisClient);
                 }
             }
         }
-        console.log(objectId);
         await redisClient.del(objectId);
-        await esClient.delete({
-            index: "plans",
-            id: objectId,
-        });
         console.log(`Object with ID ${objectId} and its children deleted successfully.`);
     }
     catch (err) {
